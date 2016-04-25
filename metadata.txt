@@ -1,0 +1,39 @@
+# This file contains metadata for your plugin. Since 
+# version 2.0 of QGIS this is the proper way to supply 
+# information about a plugin. The old method of 
+# embedding metadata in __init__.py will 
+# is no longer supported since version 2.0.
+
+# This file should be included when you package your plugin.# Mandatory items:
+
+[general]
+name=NGII Map Job Manager
+qgisMinimumVersion=2.8
+description=Plugin for Manage NGII map jobs
+version=0.1
+author=Gaia3D
+email=jangbi882@gmail.com
+
+about=This plugin manage map jobs for Korean NGII.
+
+tracker=http://github.con/gaia3d
+repository=http://github.con/gaia3d
+# End of mandatory metadata
+
+# Recommended items:
+
+# Uncomment the following line and add your changelog:
+# changelog=
+
+# Tags are comma separated with spaces allowed
+tags=http://github.con/gaia3d
+
+homepage=http://github.con/gaia3d
+category=Plugins
+icon=icon.png
+# experimental flag
+experimental=False
+
+# deprecated flag (applies to the whole plugin, not just a single version)
+deprecated=False
+
