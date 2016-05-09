@@ -28,6 +28,7 @@ from PyQt4.QtGui import *
 from PyQt4.QtCore import *
 import psycopg2
 import time
+from subprocess import check_output
 
 from ui.receive_dialog_base import Ui_Dialog
 
@@ -89,37 +90,50 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.progressBar.show()
         self.lbl_progress.show()
 
-        # TODO: 실제로 데이터 올리는 루틴 작성 필요
+        # 수령 데이터 import
+        self.importRecData()
+            # TODO: 실제로 데이터 올리는 루틴 작성 필요
         for i in range(10):
             progress = i * 10
             self.progressBar.setValue(progress)
             self.lbl_progress.setText(u"납품 데이터 올리기 진행중...{}%".format(progress))
             time.sleep(1)
-        self.progressBar.hide()
-        self.lbl_progress.hide()
-
         self.btn_upload.setDisabled(True)
         self.btn_inspect.setDisabled(False)
+
+        self.progressBar.hide()
+        self.lbl_progress.hide()
 
     def hdrClickBtnInspect(self):
         rc = QMessageBox.question(self, u"확인", u"납품받은 데이터의 검수를 시작하시겠습니까?",
                                   QMessageBox.Yes, QMessageBox.No)
         if rc == QMessageBox.Yes:
+            #self.findDiff()
             self.plugin.showWidgetInspect()
             self.close()
 
     def fillWorkerList(self):
-        # TODO: 실제로 DB에서 자료 불러오게 수정
+        # TODO: 실제로 DB에서 자료 불러오게 수정 (수정_JS)
         self.cmb_worker_nm.clear()
-        self.cmb_worker_nm.addItem(u'중앙항업')
-        self.cmb_worker_nm.addItem(u'한진항업')
-        self.cmb_worker_nm.addItem(u'범아항업')
-        self.cmb_worker_nm.addItem(u'삼아항업')
+        self.cmb_worker_nm.addItem('')
+        cur = self.plugin.conn.cursor()
+        sql = u'SELECT worker_nm FROM extjob.extjob_main group by worker_nm order by worker_nm asc'
+        cur.execute(sql)
+        workers = cur.fetchall()
+        for worker in workers:
+            self.cmb_worker_nm.addItem(worker[0])
         self.cmb_worker_nm.setCurrentIndex(0)
+
+        # self.cmb_worker_nm.clear()
+        # self.cmb_worker_nm.addItem(u'중앙항업')
+        # self.cmb_worker_nm.addItem(u'한진항업')
+        # self.cmb_worker_nm.addItem(u'범아항업')
+        # self.cmb_worker_nm.addItem(u'삼아항업')
+        # self.cmb_worker_nm.setCurrentIndex(0)
 
     def searchExtjob(self, workerName, startDate, endDate):
         try:
-            # TODO: 날짜 조건이 잘 안맞는 문제 해결
+            # TODO: 날짜 조건이 잘 안맞는 문제 해결 ( column type 변경_JS )
             cur = self.plugin.conn.cursor()
             sql = u"SELECT extjob_id, extjob_nm FROM extjob.extjob_main " \
                   u"WHERE worker_nm = %s and mapext_dttm BETWEEN %s and %s"
@@ -138,4 +152,73 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 self.cmb_extjob_nm.addItem(extjob_nm)
                 self.cmb_extjob_nm.setItemData(self.cmb_extjob_nm.count(), extjob_id)
         except Exception as e:
-            QMessageBox.warning(self, "SQL ERROR", str(e))
+            QMessageBox.warning(self, u'SQL ERROR', str(e))
+
+    def importRecData(self):
+        try:
+            # 수령ID, 수령 날짜 생성
+            cur = self.conn.cursor()
+            sql = "SELECT nextid('RD') as extjob_id, current_timestamp as mapext_dttm"
+            cur.execute(sql)
+            result = cur.fetchone()
+            receive_id = result[0]
+            receive_dttm = result[1]
+            timestemp = "{}-{}-{} {}:{}:{}.{}" \
+                .format(receive_dttm.year, receive_dttm.month, receive_dttm.day,
+                        receive_dttm.hour, receive_dttm.minute, receive_dttm.second, receive_dttm.microsecond)
+
+            layer_nm = None
+
+            # TODO: 기본 유휴성 검사?!
+            for fileName in os.listdir(self.edt_data_folder.text()):
+                # shp 파일을 찾아서 import 수령ID_레이어명
+                if os.path.splitext(fileName)[1]=='.shp':
+                    layer_nm = os.path.splitext(fileName)[0]
+                    table_nm = receive_id + "_" + layer_nm
+
+                    # 수정된 테이블 생성
+                    command = u'/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/ogr2ogr ' \
+                              u'--config SHAPE_ENCODING UTF-8 -append -a_srs EPSG:5179 ' \
+                              u'-f PostgreSQL PG:"host=localhost user=postgres dbname=sdmc password=postgres" ' \
+                              u'{} -nln extjob.{} -nlt PROMOTE_TO_MULTI '\
+                              .format(os.path.join(self.edt_data_folder.text(),fileName),table_nm)
+                    rc = check_output(command.encode(), shell=True)
+
+                    sql = u"alter table extjob.{}_{} rename shape_leng to shape_length; " \
+                          u"alter table extjob.{}_{} rename basedata_n to basedata_nm; " \
+                          u"alter table extjob.{}_{} rename mapext_dtt to mapext_dttm; " \
+                          u"alter table extjob.{}_{} rename basedata_d to basedata_dt"\
+                        .format(receive_id,layer_nm,receive_id,layer_nm,
+                                receive_id, layer_nm,receive_id,layer_nm)
+
+                    cur.execute(sql)
+
+                    sql = u"ALTER TABLE extjob.{} ADD COLUMN receive_id character varying(16); " \
+                          u"UPDATE extjob.{} SET receive_id = '{}';  " \
+                          .format(table_nm,table_nm,receive_id)
+                    cur.execute(sql)
+
+                    # receive_main import
+                    sql = u'SELECT extjob_id FROM extjob.{} ' \
+                          u'group by extjob_id having extjob_id is not NULL'.format(table_nm)
+                    cur.execute(sql)
+                    result_gruop = cur.fetchone()
+                    extjob_id = result_gruop[0]
+
+                    sql = u'INSERT INTO extjob.receive_main VALUES(%s, %s, %s, %s)'
+                    cur.execute(sql,(receive_id, extjob_id, layer_nm, receive_dttm))
+
+                    # receive_layer import
+                    sql = u'INSERT INTO extjob.receive_layer VALUES (%s, %s, %s)'
+                    cur.execute(sql,(receive_id, layer_nm, table_nm))
+
+            self.conn.commit()
+
+            return True
+
+        except Exception as e:
+            # TODO: 에러 발생시 테이블 삭제하고 진행을 멈춤
+            self.conn.rollback()
+            QMessageBox.warning(self, u"오류", str(e))
+
+            return False
