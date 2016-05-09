@@ -295,9 +295,10 @@ class WidgetInspect(QWidget, Ui_Form):
             cur.execute(sql)
 
             sql = u"create view extjob.{}_view as SELECT origin.* " \
-                  u"FROM ( select * from extjob.extjob_objlist where extjob_objlist.extjob_id = '{}') " \
+                  u"FROM ( select * from extjob.extjob_objlist where extjob_objlist.extjob_id = '{}' " \
+                  u"and layer_nm = '{}') " \
                   u"as ext left join nfsd.{} as origin on ext.ogc_fid = origin.ogc_fid"\
-                .format(self.layer_nm,self.extjob_id,self.layer_nm)
+                .format(self.layer_nm,self.extjob_id,self.layer_nm,self.layer_nm)
             cur.execute(sql)
 
             # self.plugin.conn.commit()
