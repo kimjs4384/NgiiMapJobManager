@@ -279,9 +279,9 @@ class NgiiMapJobManager:
                                 mapext_dttm.hour, mapext_dttm.minute, mapext_dttm.second, mapext_dttm.microsecond)
 
             sql = u"""INSERT INTO extjob.extjob_main
-        (extjob_id, extjob_nm, mapext_dttm, basedata_nm, basedata_dt, worker_nm, workarea_geom)
-        values
-        (%s, %s, %s, %s, %s, %s, ST_Multi(ST_GeomFromText(%s, 5179)))"""
+                        (extjob_id, extjob_nm, mapext_dttm, basedata_nm, basedata_dt, worker_nm, workarea_geom)
+                        values
+                        (%s, %s, %s, %s, %s, %s, ST_Multi(ST_GeomFromText(%s, 5179)))"""
             extjob_nm = self.dlgExtjob.edt_extjob_nm.text()
             basedata_nm = self.dlgExtjob.edt_basedata_nm.text()
             basedata_dt = self.dlgExtjob.date_basedata_dt.date().toString('yyyy-M-d')
@@ -291,42 +291,41 @@ class NgiiMapJobManager:
 
             # 데이터 추출 시간
 
-            # ===== Shape 파일 생산
-            # 일단 건물만
-            # ID 부터 모으고
-            sql = u"INSERT INTO extjob.extjob_objlist (extjob_id, layer_nm, ogc_fid) " \
-                  u"(SELECT '{}', '{}', ogc_fid FROM nfsd.nf_a_b01000 " \
-                  u"WHERE ST_Intersects(wkb_geometry, ST_GeomFromText('{}', 5179))" \
-                  u"and bdid is not NULL)"\
-                .format(extjob_id, u'nf_a_b01000', workarea_geom)
-            print sql
+            sql = u"select tablename from pg_tables where schemaname = 'nfsd'"
             cur.execute(sql)
-            self.conn.commit()
+            results = cur.fetchall()
+            for result in results:
+                layer_nm = result[0]
+                sql = "select column_name from information_schema.columns " \
+                      "where table_schema = 'nfsd' and table_name = '{}' and ordinal_position = 3".format(layer_nm)
+                cur.execute(sql)
+                col = cur.fetchone()
+                column_nm = col[0]
 
-            # Shape 만들기
-            # sql = u"SELECT nf_a_b01000.bdid, nf_a_b01000.name, nf_a_b01000.kind,nf_a_b01000.serv," \
-            #       u"nf_a_b01000.anno, nf_a_b01000.nmly, nf_a_b01000.pnu, nf_a_b01000.useapr_day, nf_a_b01000.rdnm, " \
-            #       u"nf_a_b01000.rn_cd, nf_a_b01000.bonu, nf_a_b01000.bunu, nf_a_b01000.post, nf_a_b01000.shp_alter, " \
-            #       u"nf_a_b01000.shp_his, nf_a_b01000.poi_id, nf_a_b01000.geoidn, wkb_geometry, '{}' as extjob_id, " \
-            #       u"'{}' as mapext_dttm, {} as basedata_nm, '{}' as basedata_dt,{} as worker_nm FROM nfsd.nf_a_b01000" \
-            #       u" WHERE ogc_fid in (SELECT ogc_fid from extjob.extjob_objlist WHERE extjob_id = '{}')"\
+                # ogc_fid 를 저장
+                sql = u"INSERT INTO extjob.extjob_objlist (extjob_id, layer_nm, ogc_fid) " \
+                      u"(SELECT '{}', '{}', ogc_fid FROM nfsd.{} " \
+                      u"WHERE ST_Intersects(wkb_geometry, ST_GeomFromText('{}', 5179))" \
+                      u"and {} is not NULL)" \
+                    .format(extjob_id, layer_nm, layer_nm, workarea_geom, column_nm)
+                print sql
+                cur.execute(sql)
+                self.conn.commit()
 
-            sql = u"SELECT nf_a_b01000.*, '{}' as extjob_id, " \
-                  u"'{}' as mapext_dttm, {} as basedata_nm, '{}' as basedata_dt,{} as worker_nm FROM nfsd.nf_a_b01000" \
-                  u" WHERE ogc_fid in (SELECT ogc_fid from extjob.extjob_objlist WHERE extjob_id = '{}')" \
-                  u"and bdid is not NULL" \
-                .format(extjob_id, timestemp,
-                        postgres_escape_string(basedata_nm), basedata_dt, postgres_escape_string(worker_nm), extjob_id)
+                sql = u"SELECT {}.*, '{}' as extjob_id, " \
+                      u"'{}' as mapext_dttm, {} as basedata_nm, '{}' as basedata_dt,{} as worker_nm FROM nfsd.{}" \
+                      u" WHERE ogc_fid in (SELECT ogc_fid from extjob.extjob_objlist WHERE extjob_id = '{}' " \
+                      u"and layer_nm = '{}') " \
+                    .format(layer_nm, extjob_id, timestemp, postgres_escape_string(basedata_nm), basedata_dt,
+                            postgres_escape_string(worker_nm), layer_nm, extjob_id, layer_nm)
 
-            # TODO: 한글이 깨진다. (해결_JS)
-            # --config SHAPE_ENCODING UTF-8 추가
-            shapeFileName = os.path.join(folderPath, u'nf_a_b01000')
-            command = u'/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/ogr2ogr ' \
-                      u' --config SHAPE_ENCODING UTF-8 -f "ESRI Shapefile" {}.shp ' \
-                      u'-t_srs EPSG:5179 PG:"host={} user={} dbname={} password={}" ' \
-                      u'-sql "{}"'.format(shapeFileName, self.ip_address, self.account, self.database, self.password, sql)
-            rc = check_output(command.decode(), shell=True)
-            print command
+                # TODO: 한글이 깨진다. (해결_JS)
+                shapeFileName = os.path.join(folderPath, layer_nm)
+                command = u'/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/ogr2ogr ' \
+                          u' --config SHAPE_ENCODING UTF-8 -f "ESRI Shapefile" {}.shp ' \
+                          u'-t_srs EPSG:5179 PG:"host={} user={} dbname={} password={}" ' \
+                          u'-sql "{}"'.format(shapeFileName, self.ip_address, self.account, self.database, self.password, sql)
+                rc = check_output(command.decode(), shell=True)
 
         except Exception as e:
             self.conn.rollback()
