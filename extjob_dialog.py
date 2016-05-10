@@ -27,6 +27,7 @@ from PyQt4 import QtGui, uic
 from PyQt4.QtGui import *
 from PyQt4.QtCore import *
 import psycopg2
+import ConfigParser
 
 from ui.extjob_dialog_base import Ui_Dialog
 
@@ -106,7 +107,10 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         self.edt_extjob_nm.setText(title)
 
     def hdrClickSelectFile(self):
-        fileName = QFileDialog.getOpenFileName()
+        # 이미지 파일만 선택할 수 있도록 제한
+        fileFilter = "Image Files (*.jpg *.png *.gif *.tif)"
+        fileName = QFileDialog.getOpenFileName(self.plugin.iface.mainWindow(),
+                                                          u'배경 자료를 선택해 주십시오.',"/Users/jsKim-pc/Desktop",fileFilter)
         self.edt_basedata_nm.setText(fileName)
 
     def getSidoList(self):
@@ -252,25 +256,26 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
             bjcd = self.cmb_sido.itemData(self.cmb_sido.currentIndex())
             name = self.cmb_sido.currentText()
             table = 'nf_a_g01102'
-
         assert(bjcd)
         assert(name)
         assert(table)
 
         # 선택된 영역 리스트에 넣는다.
-        # TODO: 이미 있으면 안 들어가게
-        self.lst_workarea.addItem(name)
+        # TODO: 이미 있으면 안 들어가게 (수정_JS)
+        areaItems = self.lst_workarea.findItems(name,Qt.MatchExactly)
+        if len(areaItems) == 0:
+            self.lst_workarea.addItem(name)
 
-        # 도형을 불러온다.
-        cur = self.conn.cursor()
-        # TODO: WKB로 조회하는 것으로 바꿔아 한다. 계속 실패...
-        sql = "select ST_AsText(ST_Transform(wkb_geometry, 5179)) as wkt from nfsd.{} where bjcd='{}'".format(table, bjcd)
-        cur.execute(sql)
-        row = cur.fetchone()
-        wkt = row[0]
+            # 도형을 불러온다.
+            cur = self.conn.cursor()
+            # TODO: WKB로 조회하는 것으로 바꿔아 한다. 계속 실패...
+            sql = "select ST_AsText(ST_Transform(wkb_geometry, 5179)) as wkt from nfsd.{} where bjcd='{}'".format(table, bjcd)
+            cur.execute(sql)
+            row = cur.fetchone()
+            wkt = row[0]
 
-        # 기존 영역과 합치고 이동한다.
-        self.plugin.addExtjobArea(wkt, True)
+            # 기존 영역과 합치고 이동한다.
+            self.plugin.addExtjobArea(wkt, True)
 
     def hdrClickAddMapbox(self):
         QMessageBox.warning(self, u'경고', u'개발중입니다.')
@@ -285,8 +290,18 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
             return
 
         # 데이터 폴더 선택
-        # TODO: 이전에 선택했던 폴더 기억하게
-        folderPath = QFileDialog.getExistingDirectory(self.plugin.iface.mainWindow(), u'자료를 생성할 폴더를 선택해 주십시오.')
+        # TODO: 이전에 선택했던 폴더 기억하게 ( conf 파일에 저장_JS )
+
+        conf = ConfigParser.SafeConfigParser()
+        conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
+
+        folderPath = QFileDialog.getExistingDirectory(self.plugin.iface.mainWindow(),
+                                                          u'자료를 생성할 폴더를 선택해 주십시오.',conf.get("Dir_Info", "dir"))
+
+        with open(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"), "w") as confFile:
+            conf.set("Dir_Info", "dir", folderPath)
+            conf.write(confFile)
+
         if folderPath:
             # 대화상자 닫고
             self.close()
