@@ -48,13 +48,16 @@ class WidgetInspect(QWidget, Ui_Form):
     def __init__(self, iface, dockwidget, parent):
         QWidget.__init__(self)
         Ui_Form.__init__(self)
+        self.setupUi(self)
         self.plugin = parent
+
+        self.inspect_id = None
         self.layer_nm = None
         self.receive_id = None
         self.extjob_id = None
         self.id_column = None
         self.column_sql = None
-        self.setupUi(self)
+
         self.setInitValue()
         self.connectFct()
 
@@ -171,7 +174,6 @@ class WidgetInspect(QWidget, Ui_Form):
         self.lbl_progress.setText(u"변경 탐지중...")
         self.lbl_progress.show()
 
-        self.findDiff()
         # try:
         #     cur = self.plugin.conn.cursor()
         #     cur.execute(self.sqlFindEdited)
@@ -182,68 +184,72 @@ class WidgetInspect(QWidget, Ui_Form):
         #     self.plugin.conn.commit()
         # except Exception as e:
         #     self.plugin.conn.rollback()
-        #     QMessageBox.warning(self, "SQL ERROR", str(e))
+        #     QMessageBox.warning(self, "SQL ERROR", str(e)
 
-        self.addLayers()
+        # TODO:검수 메인 테이블 테이터 삽입
+        self.insertInspectInfo()
 
-        legend = self.plugin.iface.legendInterface()
-        layers = legend.layers()
-        for layer in layers:
-            layerType = layer.type()
-            if layerType == QgsMapLayer.VectorLayer:
-                layerName = layer.name()
-                if layerName == u'변화없음':
-                    self.same_data = layer
-                elif layerName == u'속성변경':
-                    self.attr_edit_post = layer
-                elif layerName == u'도형변경':
-                    self.geo_edit_post = layer
-                elif layerName == u'삭제':
-                    self.rm_data = layer
-                elif layerName == u'추가':
-                    self.add_data = layer
+        # self.findDiff()
+        #self.addLayers()
 
-        legend.setLayerVisible(self.same_data, True)
-        time.sleep(1)
-        legend.setLayerVisible(self.attr_edit_post, True)
-        time.sleep(1)
-        legend.setLayerVisible(self.geo_edit_post, True)
-        time.sleep(1)
-        legend.setLayerVisible(self.rm_data, True)
-        time.sleep(1)
-        legend.setLayerVisible(self.add_data, True)
-        time.sleep(1)
-
-        info = u"변경탐지결과\n" \
-        u"- 신규: {}개\n" \
-        u"- 삭제: {}개\n" \
-        u"- 도형변경: {}개\n" \
-        u"- 속성변경: {}개\n" \
-        u"- 유지: {}개".format(
-            self.add_data.featureCount(),
-            self.rm_data.featureCount(),
-            self.geo_edit_post.featureCount(),
-            self.attr_edit_post.featureCount(),
-            self.same_data.featureCount()
-        )
-        self.lbl_progress.setText(info)
-
-        self.inspectList = []
-        self.crrIndex = -1
-        iter = self.add_data.getFeatures()
-        for feature in iter:
-            self.inspectList.append(feature)
-        iter = self.rm_data.getFeatures()
-        for feature in iter:
-            self.inspectList.append(feature)
-        iter = self.geo_edit_post.getFeatures()
-        for feature in iter:
-            self.inspectList.append(feature)
-        iter = self.attr_edit_post.getFeatures()
-        for feature in iter:
-            self.inspectList.append(feature)
-
-        QMessageBox.information(self, u"탐지결과", info)
+        # legend = self.plugin.iface.legendInterface()
+        # layers = legend.layers()
+        # for layer in layers:
+        #     layerType = layer.type()
+        #     if layerType == QgsMapLayer.VectorLayer:
+        #         layerName = layer.name()
+        #         if layerName == u'변화없음':
+        #             self.same_data = layer
+        #         elif layerName == u'속성변경':
+        #             self.attr_edit_post = layer
+        #         elif layerName == u'도형변경':
+        #             self.geo_edit_post = layer
+        #         elif layerName == u'삭제':
+        #             self.rm_data = layer
+        #         elif layerName == u'추가':
+        #             self.add_data = layer
+        #
+        # legend.setLayerVisible(self.same_data, True)
+        # time.sleep(1)
+        # legend.setLayerVisible(self.attr_edit_post, True)
+        # time.sleep(1)
+        # legend.setLayerVisible(self.geo_edit_post, True)
+        # time.sleep(1)
+        # legend.setLayerVisible(self.rm_data, True)
+        # time.sleep(1)
+        # legend.setLayerVisible(self.add_data, True)
+        # time.sleep(1)
+        #
+        # info = u"변경탐지결과\n" \
+        # u"- 신규: {}개\n" \
+        # u"- 삭제: {}개\n" \
+        # u"- 도형변경: {}개\n" \
+        # u"- 속성변경: {}개\n" \
+        # u"- 유지: {}개".format(
+        #     self.add_data.featureCount(),
+        #     self.rm_data.featureCount(),
+        #     self.geo_edit_post.featureCount(),
+        #     self.attr_edit_post.featureCount(),
+        #     self.same_data.featureCount()
+        # )
+        # self.lbl_progress.setText(info)
+        #
+        # self.inspectList = []
+        # self.crrIndex = -1
+        # iter = self.add_data.getFeatures()
+        # for feature in iter:
+        #     self.inspectList.append(feature)
+        # iter = self.rm_data.getFeatures()
+        # for feature in iter:
+        #     self.inspectList.append(feature)
+        # iter = self.geo_edit_post.getFeatures()
+        # for feature in iter:
+        #     self.inspectList.append(feature)
+        # iter = self.attr_edit_post.getFeatures()
+        # for feature in iter:
+        #     self.inspectList.append(feature)
+        #
+        # QMessageBox.information(self, u"탐지결과", info)
 
     def hdrClickBtnNext(self):
         self.crrIndex += 1
@@ -287,12 +293,10 @@ class WidgetInspect(QWidget, Ui_Form):
             # TODO: 테이블 비교를 통해서 차이 분석
             # 외주 정보를 통해서 view를 만듦
             self.layer_nm = self.cmb_layer_nm.currentText()
-            self.receive_id = self.cmb_receive_id.currentText()
-            self.extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
 
             cur = self.plugin.conn.cursor()
-            sql = u"create schema temp"
-            cur.execute(sql)
+            # sql = u"create schema temp"
+            # cur.execute(sql)
 
             sql = u"create view extjob.{}_view as SELECT origin.* " \
                   u"FROM ( select * from extjob.extjob_objlist where extjob_objlist.extjob_id = '{}' " \
@@ -308,24 +312,27 @@ class WidgetInspect(QWidget, Ui_Form):
                   "where table_schema = 'nfsd' and table_name = '{}'".format(self.layer_nm)
             cur.execute(sql)
             column_nm = []
-            result = cur.fetchall()
-            column_list = result[2:-2]
-            self.id_column = result[2][0]
+            results = cur.fetchall()
 
-            for list in column_list:
+            for list in results:
                 column_nm.append(list[0])
+
+            column_nm.remove('ogc_fid')
+            column_nm.remove('wkb_geometry')
+
             self.column_sql = ','.join(column_nm)
+            self.id_column = column_nm[0]
 
             # 속성, 지오메트리 까지 같은 데이터
             self.findSame()
             # 속성은 같고 지오메트리만 바뀐 데이터
-            self.findEditOnlyGeomety()
+            #self.findEditOnlyGeomety()
             # 속성이 바뀐 데이터
-            self.findEditAttr()
+            #self.findEditAttr()
             # 삭제된 데이터
-            self.findDel()
+            #self.findDel()
             # 추가된 데이터
-            self.findAdd()
+            #self.findAdd()
 
             sql = "drop view extjob.{}_view ".format(self.layer_nm)
             cur.execute(sql)
@@ -337,9 +344,19 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def findSame(self):
         cur = self.plugin.conn.cursor()
+        sql = "with same_data as ( select o.* from (select wkb_geometry,{} from extjob.{}_view) as o " \
+              "inner join (select wkb_geometry,{} from extjob.{}_{}) as e " \
+              "on (o.*) = (e.*) )," \
+              "join_geom as ( select o.ogc_fid from same_data as a inner join extjob.{}_view as o " \
+              "on a.wkb_geometry = o.wkb_geometry ) " \
+              "insert into extjob.inspect_objlist(" \
+              "inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type, )" \
+              "select 'AD20160421-00001' as inspect_id, 'nf_a_b01000' as layer_nm, ogc_fid as origin_ogc_fid, 0 as receive_ogc_fid, 's' as mod_type from join_geom;select * from join_geom;"
+
+
         sql = u"with same_data as ( select o.* from (select wkb_geometry,{} from extjob.{}_view) as o " \
               u"inner join (select wkb_geometry,{} from extjob.{}_{}) as e on (o.*) = (e.*) )," \
-              u"join_geom as ( select a.*, o.shape_length, o.shape_area from same_data as a " \
+              u"join_geom as ( select a.* from same_data as a " \
               u"inner join extjob.{}_view as o on a.{} = o.{} ) select * into temp.same_data from join_geom"\
             .format(self.column_sql,self.layer_nm,self.column_sql,self.receive_id,self.layer_nm,self.layer_nm,
                     self.id_column, self.id_column)
@@ -351,7 +368,7 @@ class WidgetInspect(QWidget, Ui_Form):
         cur = self.plugin.conn.cursor()
         sql = u"with attr_same_data as (select o.* from (select {} from extjob.{}_view) as o " \
               u"inner join (select {} from extjob.{}_{}) as e on (o.*) = (e.*) ), " \
-              u"join_geom as ( select o.wkb_geometry, a.*, o.shape_length, o.shape_area " \
+              u"join_geom as ( select o.wkb_geometry, a.* " \
               u"from attr_same_data as a inner join extjob.{}_view as o on a.{} = o.{} ), " \
               u"geo_edit as ( select * from join_geom except select * from temp.same_data) " \
               u"select * into temp.geo_edit_prev from geo_edit " \
@@ -361,10 +378,10 @@ class WidgetInspect(QWidget, Ui_Form):
 
         sql = u"with attr_same_data as ( select e.* from (select {} from extjob.{}_view) as o " \
               u"inner join (select {} from extjob.{}_{}) as e on (o.*) = (e.*) ), " \
-              u"join_geom as ( select o.wkb_geometry, a.*, o.shape_length, o.shape_area from attr_same_data as a " \
+              u"join_geom as ( select o.wkb_geometry, a.* from attr_same_data as a " \
               u"inner join extjob.{}_{} as o on a.{} = o.{} ), " \
               u"geo_edit as ( select * from join_geom " \
-              u"except select wkb_geometry,{},shape_length,shape_area from temp.same_data ) " \
+              u"except select wkb_geometry,{} from temp.same_data ) " \
               u"select t.* into temp.geo_edit_post " \
               u"from ( select a.* from geo_edit as a " \
               u"inner join extjob.{}_{} as o on a.{} = o.{} ) as t"\
@@ -380,11 +397,11 @@ class WidgetInspect(QWidget, Ui_Form):
         geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_boundary(wkb_geometry)), 4326), ' \
                       u'12) as mbr_hash_12, round( CAST(st_area(wkb_geometry) as numeric), 1) as geom_area'
 
-        sql = u"with same as (select wkb_geometry, {}, shape_length, shape_area, {} " \
+        sql = u"with same as (select wkb_geometry, {}, {} " \
               u"from temp.same_data ), " \
-              u"om as ( select wkb_geometry,{}, shape_length, shape_area, {} " \
+              u"om as ( select wkb_geometry,{}, {} " \
               u"from extjob.{}_view except select * from same ), " \
-              u"em as (select wkb_geometry, {}, shape_length, shape_area, {} " \
+              u"em as (select wkb_geometry, {}, {} " \
               u"from extjob.{}_{} except select * from same ) " \
               u"select t.* into temp.attr_edit_prev " \
               u"from ( select om.* from om inner join em " \
@@ -396,11 +413,11 @@ class WidgetInspect(QWidget, Ui_Form):
                     self.id_column,self.id_column)
         cur.execute(sql)
 
-        sql = u"with same as (select wkb_geometry, {}, shape_length, shape_area, {} " \
+        sql = u"with same as (select wkb_geometry, {}, {} " \
               u"from temp.same_data ), " \
-              u"om as ( select wkb_geometry,{}, shape_length, shape_area, {} " \
+              u"om as ( select wkb_geometry,{}, {} " \
               u"from extjob.{}_view except select * from same ), " \
-              u"em as (select wkb_geometry, {}, shape_length, shape_area, {} " \
+              u"em as (select wkb_geometry, {}, {} " \
               u"from extjob.{}_{} except select * from same ) " \
               u"select t.* into temp.attr_edit_post " \
               u"from ( select em.* from em inner join om " \
@@ -417,11 +434,11 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def findDel(self):
         cur = self.plugin.conn.cursor()
-        sql = u"with rm_same as( select wkb_geometry, {} , shape_length, shape_area from extjob.{}_view " \
+        sql = u"with rm_same as( select wkb_geometry, {} from extjob.{}_view " \
               u"except select * from temp.same_data), " \
               u"rm_edit_geo as ( select * from rm_same except select * from temp.geo_edit_prev ), " \
               u"re_edit_attr as ( select * from rm_edit_geo except " \
-              u"select wkb_geometry, {} , shape_length, shape_area from temp.attr_edit_prev) " \
+              u"select wkb_geometry, {} from temp.attr_edit_prev) " \
               u"select * into temp.rm_data from re_edit_attr"\
             .format(self.column_sql, self.layer_nm, self.column_sql)
         cur.execute(sql)
@@ -430,11 +447,11 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def findAdd(self):
         cur = self.plugin.conn.cursor()
-        sql = u"with rm_same as (SELECT wkb_geometry, {}, shape_length, shape_area FROM extjob.{}_{} " \
+        sql = u"with rm_same as (SELECT wkb_geometry, {} FROM extjob.{}_{} " \
               u"except select * from temp.same_data)," \
               u"rm_edit_geo as ( select * from rm_same except select * from temp.geo_edit_post )," \
               u"rm_edit_attr as ( select * from rm_edit_geo except " \
-              u"select wkb_geometry, {}, shape_length, shape_area from temp.attr_edit_post ) " \
+              u"select wkb_geometry, {} from temp.attr_edit_post ) " \
               u"select * into temp.add_data from rm_edit_attr"\
             .format(self.column_sql, self.receive_id, self.layer_nm, self.column_sql)
         cur.execute(sql)
@@ -493,3 +510,22 @@ class WidgetInspect(QWidget, Ui_Form):
                             'style' : 'no', 'style_border' : 'solid', 'unit':'MapUnit'})
         add_data.rendererV2().setSymbol(add_data_symbol)
         QgsMapLayerRegistry.instance().addMapLayer(add_data)
+
+    def insertInspectInfo(self):
+        # 검수ID, 검수 날짜 생성
+        cur = self.plugin.conn.cursor()
+        sql = "SELECT nextid('AD') as extjob_id, current_timestamp as mapext_dttm"
+        cur.execute(sql)
+        result = cur.fetchone()
+        self.inspect_id = result[0]
+        inspect_dttm = result[1]
+
+        self.receive_id = self.cmb_receive_id.currentText()
+        self.extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
+
+        sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm) " \
+              u"VALUES ('{}','{}','{}','{}')"\
+            .format(self.inspect_id,self.extjob_id,self.receive_id,inspect_dttm)
+        cur.execute(sql)
+
+        self.plugin.conn.commit()
