@@ -186,10 +186,9 @@ class WidgetInspect(QWidget, Ui_Form):
         #     self.plugin.conn.rollback()
         #     QMessageBox.warning(self, "SQL ERROR", str(e)
 
-        # TODO:검수 메인 테이블 테이터 삽입
         self.insertInspectInfo()
 
-        # self.findDiff()
+        self.findDiff()
         #self.addLayers()
 
         # legend = self.plugin.iface.legendInterface()
@@ -344,22 +343,24 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def findSame(self):
         cur = self.plugin.conn.cursor()
-        sql = "with same_data as ( select o.* from (select wkb_geometry,{} from extjob.{}_view) as o " \
-              "inner join (select wkb_geometry,{} from extjob.{}_{}) as e " \
-              "on (o.*) = (e.*) )," \
-              "join_geom as ( select o.ogc_fid from same_data as a inner join extjob.{}_view as o " \
-              "on a.wkb_geometry = o.wkb_geometry ) " \
-              "insert into extjob.inspect_objlist(" \
-              "inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type, )" \
-              "select 'AD20160421-00001' as inspect_id, 'nf_a_b01000' as layer_nm, ogc_fid as origin_ogc_fid, 0 as receive_ogc_fid, 's' as mod_type from join_geom;select * from join_geom;"
-
-
         sql = u"with same_data as ( select o.* from (select wkb_geometry,{} from extjob.{}_view) as o " \
-              u"inner join (select wkb_geometry,{} from extjob.{}_{}) as e on (o.*) = (e.*) )," \
-              u"join_geom as ( select a.* from same_data as a " \
-              u"inner join extjob.{}_view as o on a.{} = o.{} ) select * into temp.same_data from join_geom"\
-            .format(self.column_sql,self.layer_nm,self.column_sql,self.receive_id,self.layer_nm,self.layer_nm,
-                    self.id_column, self.id_column)
+              u"inner join (select wkb_geometry,{} from extjob.{}_{}) as e " \
+              u"on (o.*) = (e.*) )," \
+              u"join_geom as ( select o.ogc_fid from same_data as a inner join extjob.{}_view as o " \
+              u"on a.wkb_geometry = o.wkb_geometry ) " \
+              u"insert into extjob.inspect_objlist(" \
+              u"inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )" \
+              u"select '{}' as inspect_id, '{}' as layer_nm, " \
+              u"ogc_fid as origin_ogc_fid, 0 as receive_ogc_fid, 's' as mod_type from join_geom"\
+            .format(self.column_sql,self.layer_nm,self.column_sql,self.receive_id,self.layer_nm,
+                    self.layer_nm,self.inspect_id,self.layer_nm)
+
+        # sql = u"with same_data as ( select o.* from (select wkb_geometry,{} from extjob.{}_view) as o " \
+        #       u"inner join (select wkb_geometry,{} from extjob.{}_{}) as e on (o.*) = (e.*) )," \
+        #       u"join_geom as ( select a.* from same_data as a " \
+        #       u"inner join extjob.{}_view as o on a.{} = o.{} ) select * into temp.same_data from join_geom"\
+        #     .format(self.column_sql,self.layer_nm,self.column_sql,self.receive_id,self.layer_nm,self.layer_nm,
+        #             self.id_column, self.id_column)
         cur.execute(sql)
 
         self.plugin.conn.commit()
