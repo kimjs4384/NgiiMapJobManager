@@ -189,7 +189,10 @@ class WidgetInspect(QWidget, Ui_Form):
         self.insertInspectInfo()
 
         self.findDiff()
-        #self.addLayers()
+
+        self.addLayers()
+
+        self.countDiffFeature()
 
         # legend = self.plugin.iface.legendInterface()
         # layers = legend.layers()
@@ -218,37 +221,6 @@ class WidgetInspect(QWidget, Ui_Form):
         # time.sleep(1)
         # legend.setLayerVisible(self.add_data, True)
         # time.sleep(1)
-        #
-        # info = u"변경탐지결과\n" \
-        # u"- 신규: {}개\n" \
-        # u"- 삭제: {}개\n" \
-        # u"- 도형변경: {}개\n" \
-        # u"- 속성변경: {}개\n" \
-        # u"- 유지: {}개".format(
-        #     self.add_data.featureCount(),
-        #     self.rm_data.featureCount(),
-        #     self.geo_edit_post.featureCount(),
-        #     self.attr_edit_post.featureCount(),
-        #     self.same_data.featureCount()
-        # )
-        # self.lbl_progress.setText(info)
-        #
-        # self.inspectList = []
-        # self.crrIndex = -1
-        # iter = self.add_data.getFeatures()
-        # for feature in iter:
-        #     self.inspectList.append(feature)
-        # iter = self.rm_data.getFeatures()
-        # for feature in iter:
-        #     self.inspectList.append(feature)
-        # iter = self.geo_edit_post.getFeatures()
-        # for feature in iter:
-        #     self.inspectList.append(feature)
-        # iter = self.attr_edit_post.getFeatures()
-        # for feature in iter:
-        #     self.inspectList.append(feature)
-        #
-        # QMessageBox.information(self, u"탐지결과", info)
 
     def hdrClickBtnNext(self):
         self.crrIndex += 1
@@ -277,6 +249,7 @@ class WidgetInspect(QWidget, Ui_Form):
         canvas.refresh()
 
     def hdrClickBtnAccept(self):
+        
         self.hdrClickBtnNext()
 
     def hdrClickBtnReject(self):
@@ -294,17 +267,15 @@ class WidgetInspect(QWidget, Ui_Form):
             self.layer_nm = self.cmb_layer_nm.currentText()
 
             cur = self.plugin.conn.cursor()
-            # sql = u"create schema temp"
+
+            # sql = u"create view extjob.{}_view as SELECT origin.* " \
+            #       u"FROM ( select * from extjob.extjob_objlist where extjob_objlist.extjob_id = '{}' " \
+            #       u"and layer_nm = '{}') " \
+            #       u"as ext left join nfsd.{} as origin on ext.ogc_fid = origin.ogc_fid"\
+            #     .format(self.layer_nm,self.extjob_id,self.layer_nm,self.layer_nm)
             # cur.execute(sql)
 
-            sql = u"create view extjob.{}_view as SELECT origin.* " \
-                  u"FROM ( select * from extjob.extjob_objlist where extjob_objlist.extjob_id = '{}' " \
-                  u"and layer_nm = '{}') " \
-                  u"as ext left join nfsd.{} as origin on ext.ogc_fid = origin.ogc_fid"\
-                .format(self.layer_nm,self.extjob_id,self.layer_nm,self.layer_nm)
-            cur.execute(sql)
-
-            # self.plugin.conn.commit()
+            self.plugin.conn.commit()
 
             # 검사하려는 테이블의 칼럼을 shp list로 만듦
             sql = "select column_name from information_schema.columns " \
@@ -323,18 +294,22 @@ class WidgetInspect(QWidget, Ui_Form):
             self.id_column = column_nm[0]
 
             # 속성, 지오메트리 까지 같은 데이터
-            self.findSame()
+            # self.findSame()
+            # time.sleep(1)
             # 속성은 같고 지오메트리만 바뀐 데이터
-            #self.findEditOnlyGeomety()
-            # 속성이 바뀐 데이터
-            #self.findEditAttr()
+            # self.findEditOnlyGeomety()
+            # time.sleep(1)
+            # 속성만 바뀐 데이터
+            # self.findEditAttr()
+            # time.sleep(1)
             # 삭제된 데이터
-            #self.findDel()
+            # self.findDel()
+            # time.sleep(1)
             # 추가된 데이터
-            #self.findAdd()
+            # self.findAdd()
 
-            sql = "drop view extjob.{}_view ".format(self.layer_nm)
-            cur.execute(sql)
+            #sql = "drop view extjob.{}_view ".format(self.layer_nm)
+            #cur.execute(sql)
 
             self.plugin.conn.commit()
 
@@ -344,16 +319,17 @@ class WidgetInspect(QWidget, Ui_Form):
     def findSame(self):
         cur = self.plugin.conn.cursor()
         sql = u"with same_data as ( select o.* from (select wkb_geometry,{} from extjob.{}_view) as o " \
-              u"inner join (select wkb_geometry,{} from extjob.{}_{}) as e " \
-              u"on (o.*) = (e.*) )," \
-              u"join_geom as ( select o.ogc_fid from same_data as a inner join extjob.{}_view as o " \
-              u"on a.wkb_geometry = o.wkb_geometry ) " \
-              u"insert into extjob.inspect_objlist(" \
-              u"inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )" \
-              u"select '{}' as inspect_id, '{}' as layer_nm, " \
-              u"ogc_fid as origin_ogc_fid, 0 as receive_ogc_fid, 's' as mod_type from join_geom"\
-            .format(self.column_sql,self.layer_nm,self.column_sql,self.receive_id,self.layer_nm,
-                    self.layer_nm,self.inspect_id,self.layer_nm)
+              u"inner join (select wkb_geometry,{} from extjob.{}_{}) as e on (o.*) = (e.*) )," \
+              u"origin as ( select o.ogc_fid as origin_ogc_fid, a.{} from same_data as a " \
+              u"inner join extjob.{}_view as o on a.wkb_geometry = o.wkb_geometry )," \
+              u"receive as (select o.ogc_fid as receive_ogc_fid, a.{} from same_data as a " \
+              u"inner join extjob.{}_{} as o on a.wkb_geometry = o.wkb_geometry) " \
+              u"insert into extjob.inspect_objlist( inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )" \
+              u"select '{}' as inspect_id, '{}' as layer_nm, origin_ogc_fid, receive_ogc_fid, " \
+              u"'s' as mod_type from origin, receive where origin.{} = receive.{}"\
+            .format(self.column_sql,self.layer_nm,self.column_sql,self.receive_id,self.layer_nm, self.id_column,
+                    self.layer_nm, self.id_column, self.receive_id, self.layer_nm, self.inspect_id,self.layer_nm,
+                    self.id_column,self.id_column)
 
         # sql = u"with same_data as ( select o.* from (select wkb_geometry,{} from extjob.{}_view) as o " \
         #       u"inner join (select wkb_geometry,{} from extjob.{}_{}) as e on (o.*) = (e.*) )," \
@@ -367,29 +343,50 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def findEditOnlyGeomety(self):
         cur = self.plugin.conn.cursor()
+
         sql = u"with attr_same_data as (select o.* from (select {} from extjob.{}_view) as o " \
               u"inner join (select {} from extjob.{}_{}) as e on (o.*) = (e.*) ), " \
-              u"join_geom as ( select o.wkb_geometry, a.* " \
-              u"from attr_same_data as a inner join extjob.{}_view as o on a.{} = o.{} ), " \
-              u"geo_edit as ( select * from join_geom except select * from temp.same_data) " \
-              u"select * into temp.geo_edit_prev from geo_edit " \
-            .format(self.column_sql, self.layer_nm, self.column_sql, self.receive_id, self.layer_nm, self.layer_nm,
-                    self.id_column,self.id_column)
+              u"same_data as( select wkb_geometry,{} from " \
+              u"(select origin_ogc_fid from extjob.inspect_objlist where mod_type = 's' and inspect_id = '{}') as s " \
+              u"inner join extjob.{}_view as o on s.origin_ogc_fid = o.ogc_fid), " \
+              u"join_geom as ( select o.wkb_geometry, a.* from attr_same_data as a " \
+              u"inner join extjob.{}_view as o on a.{} = o.{} ), " \
+              u"geo_edit as ( select * from join_geom except select * from same_data) " \
+              u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+              u"select '{}' as inspect_id, '{}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'eg' as mod_type " \
+              u"from (select ogc_fid as origin_ogc_fid,e.{} from geo_edit as e " \
+              u"inner join extjob.{}_view as o on e.{} = o.{}) as origin, " \
+              u"(select ogc_fid as receive_ogc_fid,e.{} from geo_edit as e " \
+              u"inner join extjob.{}_{} as o on e.{} = o.{}) as edit where origin.{} = edit.{}"\
+            .format(self.column_sql, self.layer_nm, self.column_sql, self.receive_id, self.layer_nm, self.column_sql,
+                    self.inspect_id, self.layer_nm, self.layer_nm, self.id_column, self.id_column, self.inspect_id,
+                    self.layer_nm, self.id_column, self.layer_nm, self.id_column, self.id_column, self.id_column,
+                    self.receive_id, self.layer_nm, self.id_column, self.id_column, self.id_column, self.id_column)
         cur.execute(sql)
 
-        sql = u"with attr_same_data as ( select e.* from (select {} from extjob.{}_view) as o " \
-              u"inner join (select {} from extjob.{}_{}) as e on (o.*) = (e.*) ), " \
-              u"join_geom as ( select o.wkb_geometry, a.* from attr_same_data as a " \
-              u"inner join extjob.{}_{} as o on a.{} = o.{} ), " \
-              u"geo_edit as ( select * from join_geom " \
-              u"except select wkb_geometry,{} from temp.same_data ) " \
-              u"select t.* into temp.geo_edit_post " \
-              u"from ( select a.* from geo_edit as a " \
-              u"inner join extjob.{}_{} as o on a.{} = o.{} ) as t"\
-            .format(self.column_sql, self.layer_nm, self.column_sql, self.receive_id, self.layer_nm,
-                    self.receive_id,self.layer_nm,self.id_column,self.id_column,self.column_sql,
-                    self.receive_id,self.layer_nm,self.id_column,self.id_column)
-        cur.execute(sql)
+        # sql = u"with attr_same_data as (select o.* from (select {} from extjob.{}_view) as o " \
+        #       u"inner join (select {} from extjob.{}_{}) as e on (o.*) = (e.*) ), " \
+        #       u"join_geom as ( select o.wkb_geometry, a.* " \
+        #       u"from attr_same_data as a inner join extjob.{}_view as o on a.{} = o.{} ), " \
+        #       u"geo_edit as ( select * from join_geom except select * from temp.same_data) " \
+        #       u"select * into temp.geo_edit_prev from geo_edit " \
+        #     .format(self.column_sql, self.layer_nm, self.column_sql, self.receive_id, self.layer_nm, self.layer_nm,
+        #             self.id_column,self.id_column)
+        # cur.execute(sql)
+        #
+        # sql = u"with attr_same_data as ( select e.* from (select {} from extjob.{}_view) as o " \
+        #       u"inner join (select {} from extjob.{}_{}) as e on (o.*) = (e.*) ), " \
+        #       u"join_geom as ( select o.wkb_geometry, a.* from attr_same_data as a " \
+        #       u"inner join extjob.{}_{} as o on a.{} = o.{} ), " \
+        #       u"geo_edit as ( select * from join_geom " \
+        #       u"except select wkb_geometry,{} from temp.same_data ) " \
+        #       u"select t.* into temp.geo_edit_post " \
+        #       u"from ( select a.* from geo_edit as a " \
+        #       u"inner join extjob.{}_{} as o on a.{} = o.{} ) as t"\
+        #     .format(self.column_sql, self.layer_nm, self.column_sql, self.receive_id, self.layer_nm,
+        #             self.receive_id,self.layer_nm,self.id_column,self.id_column,self.column_sql,
+        #             self.receive_id,self.layer_nm,self.id_column,self.id_column)
+        # cur.execute(sql)
 
         self.plugin.conn.commit()
 
@@ -398,63 +395,98 @@ class WidgetInspect(QWidget, Ui_Form):
         geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_boundary(wkb_geometry)), 4326), ' \
                       u'12) as mbr_hash_12, round( CAST(st_area(wkb_geometry) as numeric), 1) as geom_area'
 
-        sql = u"with same as (select wkb_geometry, {}, {} " \
-              u"from temp.same_data ), " \
-              u"om as ( select wkb_geometry,{}, {} " \
-              u"from extjob.{}_view except select * from same ), " \
-              u"em as (select wkb_geometry, {}, {} " \
-              u"from extjob.{}_{} except select * from same ) " \
-              u"select t.* into temp.attr_edit_prev " \
-              u"from ( select om.* from om inner join em " \
-              u"on em.mbr_hash_12 = om.mbr_hash_12 " \
-              u"and em.geom_area between om.geom_area*0.95 and om.geom_area*1.05) as t " \
-              u"inner join extjob.{}_view as o on t.{} = o.{}"\
-            .format(self.column_sql, geohash_sql, self.column_sql, geohash_sql, self.layer_nm,
-                    self.column_sql,geohash_sql, self.receive_id, self.layer_nm, self.layer_nm,
-                    self.id_column,self.id_column)
+        sql = u"with same as (select {}, {} from (select origin_ogc_fid from extjob.inspect_objlist " \
+              u"where mod_type = 's' and inspect_id = '{}') as s " \
+              u"inner join extjob.{}_view as o on s.origin_ogc_fid = o.ogc_fid), " \
+              u"om as (select {}, {} from extjob.{}_view except select * from same ), " \
+              u"em as (select {}, {} from extjob.{}_{} except select * from same ), " \
+              u"geometry as ( select mbr_hash_12,geom_area from ( select om.* from om " \
+              u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 and em.geom_area = om.geom_area) as t) " \
+              u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+              u"select '{}' as inspect_id, '{}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
+              u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12, o.geom_area from geometry " \
+              u"inner join (select ogc_fid, {} from extjob.{}_view ) as o " \
+              u"on (geometry.mbr_hash_12,geometry.geom_area)=(o.mbr_hash_12,o.geom_area)) as origin, " \
+              u"(select ogc_fid as receive_ogc_fid, o.mbr_hash_12, o.geom_area from geometry " \
+              u"inner join (select ogc_fid, {} from extjob.{}_{} ) as o " \
+              u"on (geometry.mbr_hash_12,geometry.geom_area)=(o.mbr_hash_12,o.geom_area)) as receive " \
+              u"where (origin.mbr_hash_12,origin.geom_area) = (receive.mbr_hash_12,receive.geom_area)"\
+            .format(self.column_sql, geohash_sql, self.inspect_id, self.layer_nm, self.column_sql,
+                    geohash_sql, self.layer_nm, self.column_sql, geohash_sql, self.receive_id,
+                    self.layer_nm, self.inspect_id, self.layer_nm, geohash_sql, self.layer_nm,
+                    geohash_sql, self.receive_id, self.layer_nm )
         cur.execute(sql)
 
-        sql = u"with same as (select wkb_geometry, {}, {} " \
-              u"from temp.same_data ), " \
-              u"om as ( select wkb_geometry,{}, {} " \
-              u"from extjob.{}_view except select * from same ), " \
-              u"em as (select wkb_geometry, {}, {} " \
-              u"from extjob.{}_{} except select * from same ) " \
-              u"select t.* into temp.attr_edit_post " \
-              u"from ( select em.* from em inner join om " \
-              u"on em.mbr_hash_12 = om.mbr_hash_12 " \
-              u"and em.geom_area between om.geom_area*0.95 and om.geom_area*1.05) as t " \
-              u"inner join extjob.{}_{} as o on t.{} = o.{}" \
-            .format(self.column_sql, geohash_sql, self.column_sql, geohash_sql, self.layer_nm,
-                    self.column_sql, geohash_sql, self.receive_id, self.layer_nm, self.receive_id,self.layer_nm,
-                    self.id_column,self.id_column)
-
-        cur.execute(sql)
+        # sql = u"with same as (select wkb_geometry, {}, {} " \
+        #       u"from temp.same_data ), " \
+        #       u"om as ( select wkb_geometry,{}, {} " \
+        #       u"from extjob.{}_view except select * from same ), " \
+        #       u"em as (select wkb_geometry, {}, {} " \
+        #       u"from extjob.{}_{} except select * from same ) " \
+        #       u"select t.* into temp.attr_edit_prev " \
+        #       u"from ( select om.* from om inner join em " \
+        #       u"on em.mbr_hash_12 = om.mbr_hash_12 " \
+        #       u"and em.geom_area between om.geom_area*0.95 and om.geom_area*1.05) as t " \
+        #       u"inner join extjob.{}_view as o on t.{} = o.{}"\
+        #     .format(self.column_sql, geohash_sql, self.column_sql, geohash_sql, self.layer_nm,
+        #             self.column_sql,geohash_sql, self.receive_id, self.layer_nm, self.layer_nm,
+        #             self.id_column,self.id_column)
+        # cur.execute(sql)
+        #
+        # sql = u"with same as (select wkb_geometry, {}, {} " \
+        #       u"from temp.same_data ), " \
+        #       u"om as ( select wkb_geometry,{}, {} " \
+        #       u"from extjob.{}_view except select * from same ), " \
+        #       u"em as (select wkb_geometry, {}, {} " \
+        #       u"from extjob.{}_{} except select * from same ) " \
+        #       u"select t.* into temp.attr_edit_post " \
+        #       u"from ( select em.* from em inner join om " \
+        #       u"on em.mbr_hash_12 = om.mbr_hash_12 " \
+        #       u"and em.geom_area between om.geom_area*0.95 and om.geom_area*1.05) as t " \
+        #       u"inner join extjob.{}_{} as o on t.{} = o.{}" \
+        #     .format(self.column_sql, geohash_sql, self.column_sql, geohash_sql, self.layer_nm,
+        #             self.column_sql, geohash_sql, self.receive_id, self.layer_nm, self.receive_id,self.layer_nm,
+        #             self.id_column,self.id_column)
+        #
+        # cur.execute(sql)
 
         self.plugin.conn.commit()
 
     def findDel(self):
         cur = self.plugin.conn.cursor()
-        sql = u"with rm_same as( select wkb_geometry, {} from extjob.{}_view " \
-              u"except select * from temp.same_data), " \
-              u"rm_edit_geo as ( select * from rm_same except select * from temp.geo_edit_prev ), " \
-              u"re_edit_attr as ( select * from rm_edit_geo except " \
-              u"select wkb_geometry, {} from temp.attr_edit_prev) " \
-              u"select * into temp.rm_data from re_edit_attr"\
-            .format(self.column_sql, self.layer_nm, self.column_sql)
+
+        sql = u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+              u"select '{}' as inspect_id, '{}' as layer_nm, origin_ogc_fid, 0 as receive_ogc_fid, 'r' as mod_type " \
+              u"from (select ogc_fid as origin_ogc_fid from extjob.{}_view " \
+              u"except select origin_ogc_fid from extjob.inspect_objlist) as rm"\
+            .format(self.inspect_id, self.layer_nm, self.layer_nm)
+
+        # sql = u"with rm_same as( select wkb_geometry, {} from extjob.{}_view " \
+        #       u"except select * from temp.same_data), " \
+        #       u"rm_edit_geo as ( select * from rm_same except select * from temp.geo_edit_prev ), " \
+        #       u"re_edit_attr as ( select * from rm_edit_geo except " \
+        #       u"select wkb_geometry, {} from temp.attr_edit_prev) " \
+        #       u"select * into temp.rm_data from re_edit_attr"\
+        #     .format(self.column_sql, self.layer_nm, self.column_sql)
         cur.execute(sql)
 
         self.plugin.conn.commit()
 
     def findAdd(self):
         cur = self.plugin.conn.cursor()
-        sql = u"with rm_same as (SELECT wkb_geometry, {} FROM extjob.{}_{} " \
-              u"except select * from temp.same_data)," \
-              u"rm_edit_geo as ( select * from rm_same except select * from temp.geo_edit_post )," \
-              u"rm_edit_attr as ( select * from rm_edit_geo except " \
-              u"select wkb_geometry, {} from temp.attr_edit_post ) " \
-              u"select * into temp.add_data from rm_edit_attr"\
-            .format(self.column_sql, self.receive_id, self.layer_nm, self.column_sql)
+        sql = u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type ) " \
+              u"select '{}' as inspect_id, '{}' as layer_nm, 0 as origin_ogc_fid, receive_ogc_fid, 'a' as mod_type " \
+              u"from (select ogc_fid as receive_ogc_fid from extjob.{}_{} " \
+              u"except select receive_ogc_fid from extjob.inspect_objlist) as add"\
+            .format(self.inspect_id, self.layer_nm, self.receive_id, self.layer_nm)
+
+        # sql = u"with rm_same as (SELECT wkb_geometry, {} FROM extjob.{}_{} " \
+        #       u"except select * from temp.same_data)," \
+        #       u"rm_edit_geo as ( select * from rm_same except select * from temp.geo_edit_post )," \
+        #       u"rm_edit_attr as ( select * from rm_edit_geo except " \
+        #       u"select wkb_geometry, {} from temp.attr_edit_post ) " \
+        #       u"select * into temp.add_data from rm_edit_attr"\
+        #     .format(self.column_sql, self.receive_id, self.layer_nm, self.column_sql)
         cur.execute(sql)
 
         self.plugin.conn.commit()
@@ -471,62 +503,96 @@ class WidgetInspect(QWidget, Ui_Form):
         account = conf.get("Connection_Info", "pgAccount")
         password = conf.get("Connection_Info", "pgPw")
 
+        sql = u"(select row_number() over (order by mod_type asc) as id, * from (select ext.*, wkb_geometry, {} from "\
+              u"(select * from extjob.inspect_objlist " \
+              u"where layer_nm = '{}' and inspect_id = '{}' and mod_type = 'r') as ext " \
+              u"inner join nfsd.{} as o on ext.origin_ogc_fid = o.ogc_fid " \
+              u"union select ext.*, wkb_geometry, {} from " \
+              u"(select * from extjob.inspect_objlist " \
+              u"where layer_nm = '{}' and inspect_id = '{}'and mod_type != 's') as ext " \
+              u"inner join extjob.{}_{} as e on ext.receive_ogc_fid = e.ogc_fid) as foo )"\
+            .format(self.column_sql, self.layer_nm, self.inspect_id, self.layer_nm, self.column_sql,
+                    self.layer_nm, self.inspect_id, self.receive_id, self.layer_nm)
+
         uri.setConnection(ip_address, port, database, account, password)
-        uri.setDataSource("temp", "same_data", "wkb_geometry")
-        same_data = QgsVectorLayer(uri.uri(), u'변화없음', "postgres")
-        same_data_symbol = QgsFillSymbolV2 \
-            .createSimple({'color_border': 'black', 'width_border': '0.25',
-                           'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
-        same_data.rendererV2().setSymbol(same_data_symbol)
-        QgsMapLayerRegistry.instance().addMapLayer(same_data)
+        uri.setDataSource("",sql, "wkb_geometry", "" , "id")
+        diff_data = QgsVectorLayer(uri.uri(), u'변화정보', "postgres")
 
-        uri.setDataSource("temp", "geo_edit_post", "wkb_geometry")
-        geo_edit_post = QgsVectorLayer(uri.uri(), u'도형변경', "postgres")
-        geo_edit_post_symbol = QgsFillSymbolV2 \
-            .createSimple({'color_border': 'blue', 'width_border': '0.25',
-                           'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
-        geo_edit_post.rendererV2().setSymbol(geo_edit_post_symbol)
-        QgsMapLayerRegistry.instance().addMapLayer(geo_edit_post)
+        mod_type_symbol = {
+            'a' : ('green',u'추가'),
+            'r' : ('red',u'삭제'),
+            'eg' : ('orange',u'도형변경'),
+            'ef' : ('blue',u'속성변경')
+        }
 
-        uri.setDataSource("temp", "attr_edit_post", "wkb_geometry")
-        attr_edit_post = QgsVectorLayer(uri.uri(), u'속성변경', "postgres")
-        attr_edit_post_symbol = QgsFillSymbolV2 \
-            .createSimple({'color_border': 'orange', 'width_border': '0.25',
-                           'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
-        attr_edit_post.rendererV2().setSymbol(attr_edit_post_symbol)
-        QgsMapLayerRegistry.instance().addMapLayer(attr_edit_post)
+        categories = []
+        for mod_type, (color, label) in mod_type_symbol.items():
+            # symbol = QgsSymbolV2.defaultSymbol(diff_data.geometryType())
+            # symbol.setColor(QColor(color))
 
-        uri.setDataSource("temp", "rm_data", "wkb_geometry")
-        rm_data = QgsVectorLayer(uri.uri(), u'삭제', "postgres")
-        rm_data_symbol = QgsFillSymbolV2 \
-            .createSimple({'color_border': 'red', 'width_border': '0.25',
-                           'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
-        rm_data.rendererV2().setSymbol(rm_data_symbol)
-        QgsMapLayerRegistry.instance().addMapLayer(rm_data)
+            symbol = QgsFillSymbolV2().createSimple({'color_border': color, 'width_border': '0.25',
+                                                  'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
 
-        uri.setDataSource("temp", "add_data", "wkb_geometry")
-        add_data = QgsVectorLayer(uri.uri(), u'추가', "postgres")
-        add_data_symbol = QgsFillSymbolV2\
-            .createSimple({ 'color_border' : 'green','width_border':'0.25',
-                            'style' : 'no', 'style_border' : 'solid', 'unit':'MapUnit'})
-        add_data.rendererV2().setSymbol(add_data_symbol)
-        QgsMapLayerRegistry.instance().addMapLayer(add_data)
+            category = QgsRendererCategoryV2(mod_type, symbol, label)
+            categories.append(category)
+
+        expression = 'mod_type'  # field name
+        renderer = QgsCategorizedSymbolRendererV2(expression, categories)
+        diff_data.setRendererV2(renderer)
+
+        QgsMapLayerRegistry.instance().addMapLayer(diff_data)
+
+        self.inspectList = []
+        self.crrIndex = -1
+        iter = diff_data.getFeatures()
+        for feature in iter:
+            self.inspectList.append(feature)
+
+        QMessageBox.information(self, u"탐지결과", str(self.inspectList))
 
     def insertInspectInfo(self):
         # 검수ID, 검수 날짜 생성
+        # cur = self.plugin.conn.cursor()
+        # sql = "SELECT nextid('AD') as extjob_id, current_timestamp as mapext_dttm"
+        # cur.execute(sql)
+        # result = cur.fetchone()
+        self.inspect_id = "AD20160510_00009" # result[0]
+        # inspect_dttm = result[1]
+
+        self.receive_id = 'RD20160504_00001' # self.cmb_receive_id.currentText()
+        self.extjob_id = 'EJ20160504_00001' # self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
+
+        # sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm) " \
+        #       u"VALUES ('{}','{}','{}','{}')"\
+        #     .format(self.inspect_id,self.extjob_id,self.receive_id,inspect_dttm)
+        # cur.execute(sql)
+        #
+        # self.plugin.conn.commit()
+
+    def countDiffFeature(self):
         cur = self.plugin.conn.cursor()
-        sql = "SELECT nextid('AD') as extjob_id, current_timestamp as mapext_dttm"
+        sql = u"select mod_type, count(mod_type) as count " \
+              u"from ( select * from extjob.inspect_objlist " \
+              u"where layer_nm = 'nf_a_b01000' and inspect_id = 'AD20160510_00009') as ext " \
+              u"group by mod_type order by mod_type asc ;"
         cur.execute(sql)
-        result = cur.fetchone()
-        self.inspect_id = result[0]
-        inspect_dttm = result[1]
+        results = cur.fetchall()
+        diff_count = {}
+        for result in results:
+            diff_count[result[0]] = result[1]
 
-        self.receive_id = self.cmb_receive_id.currentText()
-        self.extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
+        info = u"변경탐지결과\n" \
+        u"- 신규: {}개\n" \
+        u"- 삭제: {}개\n" \
+        u"- 도형변경: {}개\n" \
+        u"- 속성변경: {}개\n" \
+        u"- 유지: {}개".format(
+            diff_count['a'],
+            diff_count['r'],
+            diff_count['eg'],
+            diff_count['ef'],
+            diff_count['s'] )
 
-        sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm) " \
-              u"VALUES ('{}','{}','{}','{}')"\
-            .format(self.inspect_id,self.extjob_id,self.receive_id,inspect_dttm)
-        cur.execute(sql)
+        QMessageBox.information(self, u"탐지결과", info)
 
-        self.plugin.conn.commit()
+        self.lbl_progress.setText(info)
