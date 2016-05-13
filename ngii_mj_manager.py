@@ -175,16 +175,14 @@ class NgiiMapJobManager:
         self.clearRb()
 
     def showDlgExtjob(self):
-        if not self.dlgExtjob:
-            self.dlgExtjob = DlgExtjob(self)
+        self.dlgExtjob = DlgExtjob(self)
         self.dlgExtjob.show()
         result = self.dlgExtjob.exec_()
         if result:
             pass
 
     def showDlgReceive(self):
-        if not self.dlgReceive:
-            self.dlgReceive = DlgReceive(self)
+        self.dlgReceive = DlgReceive(self)
         self.dlgReceive.show()
         result = self.dlgReceive.exec_()
         if result:
@@ -199,6 +197,7 @@ class NgiiMapJobManager:
         self.crrWidget.setVisible(True)
         # TODO: UI reflash
         self.crrWidget.repaint()
+
         pass
 
     def getConnetionInfo(self):

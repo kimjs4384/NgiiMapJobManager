@@ -65,6 +65,7 @@ class WidgetInspect(QWidget, Ui_Form):
     def connectFct(self):
         self.cmb_worker_nm.currentIndexChanged.connect(self.hdrCmbWorkerIndexChange)
         self.date_mapext_dttm.dateChanged.connect(self.hdrCmbWorkerIndexChange)
+        self.cmb_receive_id.currentIndexChanged.connect(self.addLayerList)
         self.btn_start_inspect.clicked.connect(self.hdrClickBtnStartInspect)
         self.btn_next.clicked.connect(self.hdrClickBtnNext)
         self.btn_prev.clicked.connect(self.hdrClickBtnPrev)
@@ -123,6 +124,7 @@ class WidgetInspect(QWidget, Ui_Form):
             results = cur.fetchall()
             self.cmb_extjob_nm.clear()
             self.cmb_receive_id.clear()
+            self.cmb_receive_id.addItem("")
             self.cmb_layer_nm.clear()
 
             if not results or len(results) <= 0:
@@ -138,14 +140,16 @@ class WidgetInspect(QWidget, Ui_Form):
                 self.date_basedata_dt.setDate(basedata_dt)
 
             sel_extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
-            sql = u"select * from extjob.receive_main where extjob_id = '{}'".format(sel_extjob_id)
+            sql = u"select receive_id from (select * from extjob.receive_main where extjob_id = '{}') as ext " \
+                  u"group by receive_id".format(sel_extjob_id)
             cur.execute(sql)
             results = cur.fetchall()
 
             for result in results:
                 self.cmb_receive_id.addItem(result[0])
-            for result in results:
-                self.cmb_layer_nm.addItem(result[2])
+
+            # for result in results:
+            #     self.cmb_layer_nm.addItem(result[2])
 
         except Exception as e:
             QMessageBox.warning(self, "SQL ERROR", str(e))
@@ -155,6 +159,23 @@ class WidgetInspect(QWidget, Ui_Form):
         # self.cmb_receive_id.addItem("RD20160525_00001")
         # self.cmb_layer_nm.clear()
         # self.cmb_layer_nm.addItem("nf_a_b01000")
+
+    def addLayerList(self):
+        self.cmb_layer_nm.clear()
+        if self.cmb_receive_id.currentText() == ' ' or self.cmb_layer_nm.currentText() == ' ':
+            return
+
+        cur = self.plugin.conn.cursor()
+        sel_extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
+        sql = u"select layer_nm from extjob.receive_main where extjob_id = '{}' and " \
+              u"receive_id = '{}'".format(sel_extjob_id, self.cmb_receive_id.currentText())
+
+        cur.execute(sql)
+        results = cur.fetchall()
+
+        self.cmb_layer_nm.addItem('')
+        for result in results:
+            self.cmb_layer_nm.addItem(result[0])
 
     def hdrClickBtnStartInspect(self):
         rc = QMessageBox.question(self, u"확인", u"변경탐지를 시작하시겠습니까?",

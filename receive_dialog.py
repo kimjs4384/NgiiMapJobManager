@@ -108,8 +108,9 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         rc = QMessageBox.question(self, u"확인", u"납품받은 데이터의 검수를 시작하시겠습니까?",
                                   QMessageBox.Yes, QMessageBox.No)
         if rc == QMessageBox.Yes:
-            #self.findDiff()
             self.plugin.showWidgetInspect()
+
+
             self.close()
 
     def fillWorkerList(self):
