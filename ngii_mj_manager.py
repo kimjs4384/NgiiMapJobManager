@@ -177,16 +177,14 @@ class NgiiMapJobManager:
                             stderrToServer=True)
 
     def showDlgExtjob(self):
-        if not self.dlgExtjob:
-            self.dlgExtjob = DlgExtjob(self)
+        self.dlgExtjob = DlgExtjob(self)
         self.dlgExtjob.show()
         result = self.dlgExtjob.exec_()
         if result:
             pass
 
     def showDlgReceive(self):
-        if not self.dlgReceive:
-            self.dlgReceive = DlgReceive(self)
+        self.dlgReceive = DlgReceive(self)
         self.dlgReceive.show()
         result = self.dlgReceive.exec_()
         if result:
@@ -281,15 +279,20 @@ class NgiiMapJobManager:
                                 mapext_dttm.hour, mapext_dttm.minute, mapext_dttm.second, mapext_dttm.microsecond)
 
             sql = u"""INSERT INTO extjob.extjob_main
-                        (extjob_id, extjob_nm, mapext_dttm, basedata_nm, basedata_dt, worker_nm, workarea_geom)
+                        (extjob_id, extjob_nm, mapext_dttm, basedata_nm, basedata_dt, worker_nm,
+                        workarea_geom, workarea_txt)
                         values
-                        (%s, %s, %s, %s, %s, %s, ST_Multi(ST_GeomFromText(%s, 5179)))"""
+                        (%s, %s, %s, %s, %s, %s, ST_Multi(ST_GeomFromText(%s, 5179)),%s)"""
             extjob_nm = self.dlgExtjob.edt_extjob_nm.text()
             basedata_nm = self.dlgExtjob.edt_basedata_nm.text()
             basedata_dt = self.dlgExtjob.date_basedata_dt.date().toString('yyyy-M-d')
             worker_nm = self.dlgExtjob.cmb_worker_nm.currentText()
             workarea_geom = self.extjobArea.exportToWkt()
-            cur.execute(sql, (extjob_id, extjob_nm, timestemp, basedata_nm, basedata_dt, worker_nm, workarea_geom))
+            items_list = []
+            for i in range(self.dlgExtjob.lst_workarea.count()):
+                items_list.append(self.dlgExtjob.lst_workarea.item(i).text())
+            workarea_txt = ','.join(items_list)
+            cur.execute(sql, (extjob_id, extjob_nm, timestemp, basedata_nm, basedata_dt, worker_nm, workarea_geom,workarea_txt))
 
             # 데이터 추출 시간
 
@@ -304,13 +307,23 @@ class NgiiMapJobManager:
                 col = cur.fetchone()
                 column_nm = col[0]
 
+                #겹치는 데이터가 없을경우 건너 뜀
+                sql = u"SELECT count(ogc_fid) FROM nfsd.{} " \
+                      u"WHERE ST_Intersects(wkb_geometry, ST_GeomFromText('{}', 5179))" \
+                      u"and {} is not NULL" \
+                      .format(layer_nm, workarea_geom, column_nm)
+                cur.execute(sql)
+                count = cur.fetchone()
+
+                if count[0] == 0:
+                    continue
+
                 # ogc_fid 를 저장
                 sql = u"INSERT INTO extjob.extjob_objlist (extjob_id, layer_nm, ogc_fid) " \
                       u"(SELECT '{}', '{}', ogc_fid FROM nfsd.{} " \
                       u"WHERE ST_Intersects(wkb_geometry, ST_GeomFromText('{}', 5179))" \
                       u"and {} is not NULL)" \
                     .format(extjob_id, layer_nm, layer_nm, workarea_geom, column_nm)
-                print sql
                 cur.execute(sql)
                 self.conn.commit()
 
@@ -341,4 +354,4 @@ class NgiiMapJobManager:
 
         except Exception as e:
             self.conn.rollback()
-            QMessageBox.warning(self.crrWidget, u"오류", str(e))
+            QMessageBox.warning(self.dlgExtjob, u"오류", str(e))
