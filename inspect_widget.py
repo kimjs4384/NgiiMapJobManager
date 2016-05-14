@@ -63,8 +63,8 @@ class WidgetInspect(QWidget, Ui_Form):
 
         if self.plugin.dlgReceive != None:
             extjob_id = self.plugin.dlgReceive.cmb_extjob_nm.itemData(self.plugin.dlgReceive.cmb_extjob_nm.currentIndex())
-            if extjob_id != NULL and extjob_id != "":
-                self.setDefaultInf(extjob_id)
+            if extjob_id != None and extjob_id != "":
+                self.setDefaultInfo(extjob_id)
 
     def connectFct(self):
         self.cmb_worker_nm.currentIndexChanged.connect(self.hdrCmbWorkerIndexChange)
@@ -91,7 +91,7 @@ class WidgetInspect(QWidget, Ui_Form):
         self.progressBar.hide()
         self.lbl_progress.hide()
 
-    def setDefaultInf(self,extjob_id):
+    def setDefaultInfo(self,extjob_id):
         try:
             cur = self.plugin.conn.cursor()
             sql = u"select worker_nm, to_char(mapext_dttm,'yyyy-mm-dd'), extjob_nm " \
@@ -106,7 +106,6 @@ class WidgetInspect(QWidget, Ui_Form):
 
             extjob_nm_index = self.cmb_extjob_nm.findText(result[2])
             self.cmb_extjob_nm.setCurrentIndex(extjob_nm_index)
-
 
         except Exception as e:
             QMessageBox.warning(self, u"오류", str(e))
@@ -485,11 +484,11 @@ class WidgetInspect(QWidget, Ui_Form):
             symbol = QgsFillSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
                                                      'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
         elif maintain_data.wkbType() == QGis.WKBMultiLineString:
-            symbol = QgsFillSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
+            symbol = QgsLineSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
                                                      'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
         else:
-            symbol = QgsFillSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
-                                                     'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
+            symbol = QgsMarkerSymbolV2.createSimple({'color': 'black', 'size': '0.25',
+                                                     'style_border': 'no', 'unit': 'MapUnit'})
 
         maintain_data.rendererV2().setSymbol(symbol)
         QgsMapLayerRegistry.instance().addMapLayer(maintain_data)
@@ -516,14 +515,18 @@ class WidgetInspect(QWidget, Ui_Form):
             'ef' : ('blue',u'속성변경')
         }
 
+        diff_data_type = diff_data.wkbType()
         categories = []
         for mod_type, (color, label) in mod_type_symbol.items():
-            if maintain_data.wkbType() == QGis.WKBMultiPolygon:
+            if diff_data_type == QGis.WKBMultiPolygon:
                 symbol = QgsFillSymbolV2().createSimple({'color_border': color, 'width_border': '0.25',
                                                       'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
-            else:
+            elif diff_data_type == QGis.WKBMultiLineString:
                 symbol = QgsLineSymbolV2().createSimple({'color': color, 'width': '0.25',
                                                          'style': 'solid', 'unit': 'MapUnit'})
+            else:
+                symbol = QgsMarkerSymbolV2.createSimple({'color': 'black', 'size': '0.25',
+                                                         'style_border': 'no', 'unit': 'MapUnit'})
             category = QgsRendererCategoryV2(mod_type, symbol, label)
             categories.append(category)
 
