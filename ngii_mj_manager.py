@@ -29,6 +29,7 @@ import psycopg2
 from qgis.core import *
 from qgis.gui import QgsRubberBand
 from subprocess import check_output
+import sys
 
 # Initialize Qt resources from file resources.py
 # Import the code for the dialog
@@ -37,13 +38,7 @@ from receive_dialog import DlgReceive
 from inspect_widget import WidgetInspect
 
 # === for PyCharm Debugging
-# import pydevd
-#
-# if not pydevd.connected:
-#     pydevd.settrace('localhost',
-#                     port=9999,
-#                     stdoutToServer=True,
-#                     stderrToServer=True)
+import pydevd
 # === for PyCharm Debugging
 
 # Make safe String for PostgreSQL
@@ -145,9 +140,9 @@ class NgiiMapJobManager:
         self.menuActions = [self.showDlgExtjob, self.showDlgReceive, self.showWidgetInspect]
 
         # ==== For DEBUG
-        # self.menuIcons.append('bug.png')
-        # self.menuTexts.append(u'디버깅 연결')
-        # self.menuActions.append(self.attachPyDev)
+        self.menuIcons.append('bug.png')
+        self.menuTexts.append(u'디버깅 연결')
+        self.menuActions.append(self.attachPyDev)
         # ==== For DEBUG
 
         self.toolbar = self.iface.addToolBar(self.mainMenuTitle)
@@ -173,6 +168,13 @@ class NgiiMapJobManager:
             del self.crrWidget
             self.crrWidget = None
         self.clearRb()
+
+    def attachPyDev(self):
+        if not pydevd.connected:
+            pydevd.settrace('localhost',
+                            port=9999,
+                            stdoutToServer=True,
+                            stderrToServer=True)
 
     def showDlgExtjob(self):
         if not self.dlgExtjob:
@@ -319,13 +321,23 @@ class NgiiMapJobManager:
                     .format(layer_nm, extjob_id, timestemp, postgres_escape_string(basedata_nm), basedata_dt,
                             postgres_escape_string(worker_nm), layer_nm, extjob_id, layer_nm)
 
-                # TODO: 한글이 깨진다. (해결_JS)
+                # ogr2ogr을 이용해 DB를 Shape으로 내보내기
                 shapeFileName = os.path.join(folderPath, layer_nm)
-                command = u'/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/ogr2ogr ' \
+                # 윈도우가 아닌 경우 PATH 추가
+                ogr2ogrPath = None
+                if sys.platform == "win32":
+                    ogr2ogrPath = ""
+                else:
+                    ogr2ogrPath = "/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/"
+
+                command = u'{}ogr2ogr ' \
                           u' --config SHAPE_ENCODING UTF-8 -f "ESRI Shapefile" {}.shp ' \
                           u'-t_srs EPSG:5179 PG:"host={} user={} dbname={} password={}" ' \
-                          u'-sql "{}"'.format(shapeFileName, self.ip_address, self.account, self.database, self.password, sql)
+                          u'-sql "{}"'.format(ogr2ogrPath, shapeFileName, self.ip_address, self.account, self.database, self.password, sql)
                 rc = check_output(command.decode(), shell=True)
+                # TODO: 각 파일에 해당하는 *.cpg 파일이 생성되게 보완
+            # TODO: 모든 레이어가 문제 없을 때만 메시지 보이게 보완
+            QMessageBox.information(self.crrWidget, u"작업 완료", u"작업용 수치지도 생성이 완료되었습니다.")
 
         except Exception as e:
             self.conn.rollback()

@@ -29,6 +29,7 @@ from PyQt4.QtCore import *
 import psycopg2
 import time
 from subprocess import check_output
+import sys
 
 from ui.receive_dialog_base import Ui_Dialog
 
@@ -176,12 +177,19 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     layer_nm = os.path.splitext(fileName)[0]
                     table_nm = receive_id + "_" + layer_nm
 
+                    # 윈도우가 아닌 경우 PATH 추가
+                    ogr2ogrPath = None
+                    if sys.platform == "win32":
+                        ogr2ogrPath = ""
+                    else:
+                        ogr2ogrPath = "/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/"
+
                     # 수정된 테이블 생성
-                    command = u'/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/ogr2ogr ' \
+                    command = u'{}ogr2ogr ' \
                               u'--config SHAPE_ENCODING UTF-8 -append -a_srs EPSG:5179 ' \
                               u'-f PostgreSQL PG:"host=localhost user=postgres dbname=sdmc password=postgres" ' \
                               u'{} -nln extjob.{} -nlt PROMOTE_TO_MULTI '\
-                              .format(os.path.join(self.edt_data_folder.text(),fileName),table_nm)
+                              .format(ogr2ogrPath, os.path.join(self.edt_data_folder.text(),fileName),table_nm)
                     rc = check_output(command.encode(), shell=True)
 
                     sql = u"alter table extjob.{}_{} rename shape_leng to shape_length; " \
