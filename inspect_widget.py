@@ -61,6 +61,10 @@ class WidgetInspect(QWidget, Ui_Form):
         self.setInitValue()
         self.connectFct()
 
+        if self.plugin.dlgReceive != None:
+            extjob_id = self.plugin.dlgReceive.cmb_extjob_nm.itemData(self.plugin.dlgReceive.cmb_extjob_nm.currentIndex())
+            if extjob_id != NULL and extjob_id != "":
+                self.setDefaultInf(extjob_id)
 
     def connectFct(self):
         self.cmb_worker_nm.currentIndexChanged.connect(self.hdrCmbWorkerIndexChange)
@@ -86,6 +90,26 @@ class WidgetInspect(QWidget, Ui_Form):
 
         self.progressBar.hide()
         self.lbl_progress.hide()
+
+    def setDefaultInf(self,extjob_id):
+        try:
+            cur = self.plugin.conn.cursor()
+            sql = u"select worker_nm, to_char(mapext_dttm,'yyyy-mm-dd'), extjob_nm " \
+                  u"from extjob.extjob_main where extjob_id = '{}'".format(extjob_id)
+            cur.execute(sql)
+            result = cur.fetchone()
+
+            worker_index = self.cmb_worker_nm.findText(result[0])
+            self.cmb_worker_nm.setCurrentIndex(worker_index)
+
+            self.date_mapext_dttm.setDate(QDate.fromString(result[1],'yyyy-MM-dd'))
+
+            extjob_nm_index = self.cmb_extjob_nm.findText(result[2])
+            self.cmb_extjob_nm.setCurrentIndex(extjob_nm_index)
+
+
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", str(e))
 
     def fillWorkerList(self):
         # TODO: 실제로 DB에서 자료 불러오게 수정(수정_JS)
@@ -117,7 +141,7 @@ class WidgetInspect(QWidget, Ui_Form):
         try:
             cur = self.plugin.conn.cursor()
             sql = u"SELECT extjob_id, extjob_nm, basedata_dt FROM extjob.extjob_main " \
-                  u"WHERE worker_nm = %s and mapext_dttm BETWEEN %s and %s"
+                  u"WHERE worker_nm = %s and mapext_dttm BETWEEN %s and %s order by basedata_dt desc"
             cur.execute(sql, (workerName,
                               u"{} 00:00:00".format(startDate.toString('yyyy-M-d')),
                               u"{} 23:59:59.9999".format(endDate.toString('yyyy-M-d'))))
@@ -128,7 +152,7 @@ class WidgetInspect(QWidget, Ui_Form):
             self.cmb_layer_nm.clear()
 
             if not results or len(results) <= 0:
-                QMessageBox.warning(self, u"검색실패", u"조건에 맞는 작업이 없습니다.")
+                # QMessageBox.warning(self, u"검색실패", u"조건에 맞는 작업이 없습니다.")
                 return
 
             for result in results:
@@ -282,6 +306,10 @@ class WidgetInspect(QWidget, Ui_Form):
             # 외주 정보를 통해서 view를 만듦
             self.layer_nm = self.cmb_layer_nm.currentText()
 
+            self.sql_rep = open(os.path.join(os.path.dirname(__file__), "conf", "sql_rep.txt"), 'a')
+            self.sql_rep.write(u'data : {} , inspect_id : {} , layer_nm : {} \n\n'
+                               .format(str(QDate.currentDate()), self.inspect_id, self.layer_nm))
+
             cur = self.plugin.conn.cursor()
 
             sql = u"create view extjob.{}_view as SELECT origin.* " \
@@ -289,9 +317,8 @@ class WidgetInspect(QWidget, Ui_Form):
                   u"and layer_nm = '{}') " \
                   u"as ext left join nfsd.{} as origin on ext.ogc_fid = origin.ogc_fid"\
                 .format(self.layer_nm,self.extjob_id,self.layer_nm,self.layer_nm)
+            self.sql_rep.write("view :" + sql + "\n")
             cur.execute(sql)
-
-            self.plugin.conn.commit()
 
             # 검사하려는 테이블의 칼럼을 shp list로 만듦
             sql = "select column_name from information_schema.columns " \
@@ -324,12 +351,16 @@ class WidgetInspect(QWidget, Ui_Form):
             # 추가된 데이터
             self.findAdd()
 
+            self.sql_rep.write('\n')
+            self.sql_rep.close()
+
             sql = "drop view extjob.{}_view ".format(self.layer_nm)
             cur.execute(sql)
 
             self.plugin.conn.commit()
 
         except Exception as e:
+            self.plugin.conn.rollback()
             QMessageBox.warning(self, u"오류", str(e))
 
     def findSame(self):
@@ -346,10 +377,8 @@ class WidgetInspect(QWidget, Ui_Form):
             .format(self.column_sql,self.layer_nm,self.column_sql,self.receive_id,self.layer_nm, self.id_column,
                     self.layer_nm, self.id_column, self.receive_id, self.layer_nm, self.inspect_id,self.layer_nm,
                     self.id_column,self.id_column)
-
+        self.sql_rep.write("same_data : " + sql + "\n")
         cur.execute(sql)
-
-        self.plugin.conn.commit()
 
     def findEditOnlyGeomety(self):
         cur = self.plugin.conn.cursor()
@@ -372,9 +401,8 @@ class WidgetInspect(QWidget, Ui_Form):
                     self.inspect_id, self.layer_nm, self.layer_nm, self.id_column, self.id_column, self.inspect_id,
                     self.layer_nm, self.id_column, self.layer_nm, self.id_column, self.id_column, self.id_column,
                     self.receive_id, self.layer_nm, self.id_column, self.id_column, self.id_column, self.id_column)
+        self.sql_rep.write("edit_geom_data : " + sql + "\n")
         cur.execute(sql)
-
-        self.plugin.conn.commit()
 
     def findEditAttr(self):
         cur = self.plugin.conn.cursor()
@@ -401,9 +429,8 @@ class WidgetInspect(QWidget, Ui_Form):
                     geohash_sql, self.layer_nm, self.column_sql, geohash_sql, self.receive_id,
                     self.layer_nm, self.inspect_id, self.layer_nm, geohash_sql, self.layer_nm,
                     geohash_sql, self.receive_id, self.layer_nm )
+        self.sql_rep.write("edit_feature_data : " + sql + "\n")
         cur.execute(sql)
-
-        self.plugin.conn.commit()
 
     def findDel(self):
         cur = self.plugin.conn.cursor()
@@ -414,10 +441,8 @@ class WidgetInspect(QWidget, Ui_Form):
               u"except select origin_ogc_fid from extjob.inspect_objlist " \
               u"where inspect_id = '{}' and layer_nm = '{}' ) as rm"\
             .format(self.inspect_id, self.layer_nm, self.layer_nm,self.inspect_id, self.layer_nm)
-
+        self.sql_rep.write("rm_data : " + sql + "\n")
         cur.execute(sql)
-
-        self.plugin.conn.commit()
 
     def findAdd(self):
         cur = self.plugin.conn.cursor()
@@ -427,10 +452,8 @@ class WidgetInspect(QWidget, Ui_Form):
               u"except select receive_ogc_fid from extjob.inspect_objlist " \
               u"where inspect_id = '{}' and layer_nm = '{}' ) as add"\
             .format(self.inspect_id, self.layer_nm, self.receive_id, self.layer_nm,self.inspect_id, self.layer_nm)
-
+        self.sql_rep.write("add_data : " + sql + "\n")
         cur.execute(sql)
-
-        self.plugin.conn.commit()
 
     def addLayers(self):
         uri = QgsDataSourceURI()
@@ -444,21 +467,34 @@ class WidgetInspect(QWidget, Ui_Form):
         account = conf.get("Connection_Info", "pgAccount")
         password = conf.get("Connection_Info", "pgPw")
 
+        # 기존의 데이터 ( 변화없는 정보 )
         sql = u"(select row_number() over (order by mod_type asc) as id, ext.*, wkb_geometry, {} " \
               u"from (select * from extjob.inspect_objlist " \
               u"where layer_nm = '{}' and inspect_id = '{}' " \
-              u"and mod_type != 'r' and mod_type != 'ef') as ext " \
+              u"and mod_type != 'r' ) as ext " \
               u"inner join nfsd.{} as o on ext.origin_ogc_fid = o.ogc_fid)" \
             .format(self.column_sql, self.layer_nm, self.inspect_id, self.layer_nm)
 
         uri.setConnection(ip_address, port, database, account, password)
         uri.setDataSource("", sql, "wkb_geometry", "", "id")
         maintain_data = QgsVectorLayer(uri.uri(), u'변화없음', "postgres")
-        symbol = QgsFillSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
-                                                 'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
+
+        # TODO: 지오메트리 타입에 따라서 심볼이 달라져야함
+        symbol = None
+        if maintain_data.wkbType() == QGis.WKBMultiPolygon:
+            symbol = QgsFillSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
+                                                     'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
+        elif maintain_data.wkbType() == QGis.WKBMultiLineString:
+            symbol = QgsFillSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
+                                                     'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
+        else:
+            symbol = QgsFillSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
+                                                     'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
+
         maintain_data.rendererV2().setSymbol(symbol)
         QgsMapLayerRegistry.instance().addMapLayer(maintain_data)
 
+        # 변화가 있는 정보
         sql = u"(select row_number() over (order by mod_type asc) as id, * from (select ext.*, wkb_geometry, {} from "\
                   u"(select * from extjob.inspect_objlist " \
                   u"where layer_nm = '{}' and inspect_id = '{}' and mod_type = 'r') as ext " \
@@ -482,12 +518,12 @@ class WidgetInspect(QWidget, Ui_Form):
 
         categories = []
         for mod_type, (color, label) in mod_type_symbol.items():
-            # symbol = QgsSymbolV2.defaultSymbol(diff_data.geometryType())
-            # symbol.setColor(QColor(color))
-
-            symbol = QgsFillSymbolV2().createSimple({'color_border': color, 'width_border': '0.25',
-                                                  'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
-
+            if maintain_data.wkbType() == QGis.WKBMultiPolygon:
+                symbol = QgsFillSymbolV2().createSimple({'color_border': color, 'width_border': '0.25',
+                                                      'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
+            else:
+                symbol = QgsLineSymbolV2().createSimple({'color': color, 'width': '0.25',
+                                                         'style': 'solid', 'unit': 'MapUnit'})
             category = QgsRendererCategoryV2(mod_type, symbol, label)
             categories.append(category)
 
