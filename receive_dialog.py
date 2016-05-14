@@ -61,6 +61,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.btn_select_folder.clicked.connect(self.hdrClickBtnSelectFolder)
         self.btn_upload.clicked.connect(self.hdrClickBtnUpload)
         self.btn_inspect.clicked.connect(self.hdrClickBtnInspect)
+        self.cmb_extjob_nm.currentIndexChanged.connect(self.getWorkArea)
 
     def setInitValue(self):
         self.fillWorkerList()
@@ -75,13 +76,15 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.btn_inspect.setDisabled(True)
 
     def hdrClickBtnSearch(self):
+        self.cmb_extjob_nm.clear()
         workerName = self.cmb_worker_nm.currentText()
         startDate = self.date_mapext_dttm.date()
         endDate = self.date_mapext_dttm_2.date()
         self.searchExtjob(workerName, startDate, endDate)
 
     def hdrClickBtnSelectFolder(self):
-        folderPath = QFileDialog.getExistingDirectory(self.plugin.iface.mainWindow(), u'납품받은 데이터가 있는 폴더를 선택해 주십시오.')
+        folderPath = QFileDialog.getExistingDirectory(self.plugin.iface.mainWindow(),
+                                                      u'납품받은 데이터가 있는 폴더를 선택해 주십시오.')
         if folderPath:
             self.dataFolder = folderPath
             self.edt_data_folder.setText(folderPath)
@@ -91,15 +94,15 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.lbl_progress.show()
 
         # 수령 데이터 import
-        self.importRecData()
+        if self.importRecData():
             # TODO: 실제로 데이터 올리는 루틴 작성 필요
-        for i in range(10):
-            progress = i * 10
-            self.progressBar.setValue(progress)
-            self.lbl_progress.setText(u"납품 데이터 올리기 진행중...{}%".format(progress))
-            time.sleep(1)
-        self.btn_upload.setDisabled(True)
-        self.btn_inspect.setDisabled(False)
+            for i in range(10):
+                progress = i * 10
+                self.progressBar.setValue(progress)
+                self.lbl_progress.setText(u"납품 데이터 올리기 진행중...{}%".format(progress))
+                time.sleep(1)
+            self.btn_upload.setDisabled(True)
+            self.btn_inspect.setDisabled(False)
 
         self.progressBar.hide()
         self.lbl_progress.hide()
@@ -109,8 +112,6 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                                   QMessageBox.Yes, QMessageBox.No)
         if rc == QMessageBox.Yes:
             self.plugin.showWidgetInspect()
-
-
             self.close()
 
     def fillWorkerList(self):
@@ -143,6 +144,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                         u"{} 23:59:59.9999".format(endDate.toString('yyyy-M-d'))))
             results = cur.fetchall()
             self.cmb_extjob_nm.clear()
+            self.cmb_extjob_nm.addItem(u"작업명을 선택하세요")
             if not results or len(results) <= 0:
                 QMessageBox.warning(self, u"검색실패", u"조건에 맞는 작업이 없습니다.")
                 return
@@ -151,12 +153,37 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 extjob_id = result[0]
                 extjob_nm = result[1]
                 self.cmb_extjob_nm.addItem(extjob_nm)
-                self.cmb_extjob_nm.setItemData(self.cmb_extjob_nm.count(), extjob_id)
+                self.cmb_extjob_nm.setItemData(self.cmb_extjob_nm.count()-1, extjob_id)
         except Exception as e:
             QMessageBox.warning(self, u'SQL ERROR', str(e))
 
+    def getWorkArea(self):
+        st_model = QStandardItemModel()
+        self.lst_workarea.setModel(st_model)
+
+        if self.cmb_extjob_nm.currentIndex() <= 0:
+            return
+
+        cur = self.plugin.conn.cursor()
+        sql = u"select workarea_txt from extjob.extjob_main where extjob_id = '{}' ;"\
+            .format(self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex()))
+
+        cur.execute(sql)
+        result = cur.fetchone()
+        item_list = result[0].split(',')
+
+        for item in item_list:
+            str = QStandardItem(item)
+            st_model.appendRow(str)
+
+        self.lst_workarea.setModel(st_model)
+
     def importRecData(self):
         try:
+            if self.edt_data_folder.text() == "":
+                QMessageBox.warning(self, u"오류", u"폴더를 선택해 주시기 바랍니다")
+                return False
+
             # 수령ID, 수령 날짜 생성
             cur = self.conn.cursor()
             sql = "SELECT nextid('RD') as extjob_id, current_timestamp as mapext_dttm"
@@ -185,8 +212,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                               .format(os.path.join(self.edt_data_folder.text(),fileName),table_nm)
                     rc = check_output(command.encode(), shell=True)
 
-                    sql = u"alter table extjob.{}_{} rename shape_leng to shape_length; " \
-                          u"alter table extjob.{}_{} rename basedata_n to basedata_nm; " \
+                    sql = u"alter table extjob.{}_{} rename basedata_n to basedata_nm; " \
                           u"alter table extjob.{}_{} rename mapext_dtt to mapext_dttm; " \
                           u"alter table extjob.{}_{} rename basedata_d to basedata_dt"\
                         .format(receive_id,layer_nm,receive_id,layer_nm,
@@ -204,6 +230,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                           u'group by extjob_id having extjob_id is not NULL'.format(table_nm)
                     cur.execute(sql)
                     result_gruop = cur.fetchone()
+
                     extjob_id = result_gruop[0]
 
                     sql = u'INSERT INTO extjob.receive_main VALUES(%s, %s, %s, %s)'
