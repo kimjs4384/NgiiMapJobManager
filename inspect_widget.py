@@ -70,11 +70,13 @@ class WidgetInspect(QWidget, Ui_Form):
         self.cmb_worker_nm.currentIndexChanged.connect(self.hdrCmbWorkerIndexChange)
         self.date_mapext_dttm.dateChanged.connect(self.hdrCmbWorkerIndexChange)
         self.cmb_receive_id.currentIndexChanged.connect(self.addLayerList)
+        self.cmb_extjob_nm.currentIndexChanged.connect(self.hdrCmbExtjobNmIndexChange)
         self.btn_start_inspect.clicked.connect(self.hdrClickBtnStartInspect)
         self.btn_next.clicked.connect(self.hdrClickBtnNext)
         self.btn_prev.clicked.connect(self.hdrClickBtnPrev)
         self.btn_accept.clicked.connect(self.hdrClickBtnAccept)
         self.btn_reject.clicked.connect(self.hdrClickBtnReject)
+        self.btn_make_report.clicked.connect(self.hdrClickBtnMakeReport)
 
     def setInitValue(self):
         self.fillWorkerList()
@@ -87,6 +89,7 @@ class WidgetInspect(QWidget, Ui_Form):
         self.btn_next.setDisabled(True)
         self.btn_prev.setDisabled(True)
         self.btn_reject.setDisabled(True)
+        self.btn_make_report.setDisabled(True)
 
         self.progressBar.hide()
         self.lbl_progress.hide()
@@ -111,7 +114,6 @@ class WidgetInspect(QWidget, Ui_Form):
             QMessageBox.warning(self, u"오류", str(e))
 
     def fillWorkerList(self):
-        # TODO: 실제로 DB에서 자료 불러오게 수정(수정_JS)
         self.cmb_worker_nm.clear()
         self.cmb_worker_nm.addItem('')
         cur = self.plugin.conn.cursor()
@@ -121,13 +123,6 @@ class WidgetInspect(QWidget, Ui_Form):
         for worker in workers:
             self.cmb_worker_nm.addItem(worker[0])
         self.cmb_worker_nm.setCurrentIndex(0)
-
-        # self.cmb_worker_nm.clear()
-        # self.cmb_worker_nm.addItem(u'중앙항업')
-        # self.cmb_worker_nm.addItem(u'한진항업')
-        # self.cmb_worker_nm.addItem(u'범아항업')
-        # self.cmb_worker_nm.addItem(u'삼아항업')
-        # self.cmb_worker_nm.setCurrentIndex(-1)
 
     def hdrCmbWorkerIndexChange(self):
         workerName = self.cmb_worker_nm.currentText()
@@ -147,7 +142,6 @@ class WidgetInspect(QWidget, Ui_Form):
             results = cur.fetchall()
             self.cmb_extjob_nm.clear()
             self.cmb_receive_id.clear()
-            self.cmb_receive_id.addItem("")
             self.cmb_layer_nm.clear()
 
             if not results or len(results) <= 0:
@@ -177,16 +171,11 @@ class WidgetInspect(QWidget, Ui_Form):
         except Exception as e:
             QMessageBox.warning(self, "SQL ERROR", str(e))
 
-        # TODO: 진짜로 조회해 넣기(수정_JS)
-        # self.cmb_receive_id.clear()
-        # self.cmb_receive_id.addItem("RD20160525_00001")
-        # self.cmb_layer_nm.clear()
-        # self.cmb_layer_nm.addItem("nf_a_b01000")
+    def hdrCmbExtjobNmIndexChange(self):
+        self.addLayerList()
 
     def addLayerList(self):
         self.cmb_layer_nm.clear()
-        if self.cmb_receive_id.currentText() == ' ' or self.cmb_layer_nm.currentText() == ' ':
-            return
 
         cur = self.plugin.conn.cursor()
         sel_extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
@@ -201,16 +190,26 @@ class WidgetInspect(QWidget, Ui_Form):
             self.cmb_layer_nm.addItem(result[0])
 
     def hdrClickBtnStartInspect(self):
+        if self.cmb_layer_nm.currentText() == "":
+            QMessageBox.warning(self, u"오류", u"검수할 레이러를 선택하셔야합니다.")
+            return
+
+        if self.edt_inpector.text() == "":
+            QMessageBox.warning(self, u"오류", u"검수자가 기록되어야합니다.")
+            return
+
         rc = QMessageBox.question(self, u"확인", u"변경탐지를 시작하시겠습니까?",
                                   QMessageBox.Yes, QMessageBox.No)
         if rc != QMessageBox.Yes:
             return
 
-        self.btn_start_inspect.setDisabled(True)
+        # self.btn_start_inspect.setDisabled(True)
+        self.btn_start_inspect.setVisible(False)  # 자리가 좁아 안보이게 하는 것으로 수정
         self.btn_accept.setDisabled(False)
         self.btn_next.setDisabled(False)
         self.btn_prev.setDisabled(False)
         self.btn_reject.setDisabled(False)
+        self.btn_make_report.setDisabled(False)
 
         self.findChange()
 
@@ -545,7 +544,7 @@ class WidgetInspect(QWidget, Ui_Form):
     def insertInspectInfo(self):
         # 검수ID, 검수 날짜 생성
         cur = self.plugin.conn.cursor()
-        sql = "SELECT nextid('AD') as extjob_id, current_timestamp as mapext_dttm"
+        sql = u"SELECT nextid('AD') as extjob_id, current_timestamp as mapext_dttm"
         cur.execute(sql)
         result = cur.fetchone()
         self.inspect_id = result[0]
@@ -553,10 +552,12 @@ class WidgetInspect(QWidget, Ui_Form):
 
         self.receive_id =  self.cmb_receive_id.currentText()
         self.extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
+        self.inspecter = self.edt_inpector.text()
 
-        sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm) " \
-              u"VALUES ('{}','{}','{}','{}')"\
-            .format(self.inspect_id,self.extjob_id,self.receive_id,inspect_dttm)
+        # TODO: Secure Coding
+        sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm) " \
+              u"VALUES ('{}','{}','{}','{}','{}')"\
+            .format(self.inspect_id, self.extjob_id, self.receive_id, inspect_dttm, self.inspecter)
         cur.execute(sql)
 
         self.plugin.conn.commit()
@@ -588,3 +589,6 @@ class WidgetInspect(QWidget, Ui_Form):
         QMessageBox.information(self, u"탐지결과", info)
 
         self.lbl_progress.setText(info)
+
+    def hdrClickBtnMakeReport(self):
+        pass

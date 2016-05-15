@@ -90,7 +90,7 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         # self.close.connect(self.hdrClose)
 
     def fillWorkerList(self):
-        # TODO: 실제로 DB에서 자료 불러오게 수정
+        # TODO: 설정파일에서 업체 리스트 부르게 수정
         self.cmb_worker_nm.clear()
         self.cmb_worker_nm.addItem(u'중앙항업')
         self.cmb_worker_nm.addItem(u'한진항업')
@@ -312,3 +312,4 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
 
     def hdrClose(self):
         self.plugin.clearRb()
+        # TODO: 업체 리스트를 설정파일에 저장하게

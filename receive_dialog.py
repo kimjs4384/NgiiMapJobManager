@@ -84,6 +84,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.searchExtjob(workerName, startDate, endDate)
 
     def hdrClickBtnSelectFolder(self):
+        # TODO: 폴더가 기억되게 수정
         folderPath = QFileDialog.getExistingDirectory(self.plugin.iface.mainWindow(),
                                                       u'납품받은 데이터가 있는 폴더를 선택해 주십시오.')
         if folderPath:
@@ -96,7 +97,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
         # 수령 데이터 import
         if self.importRecData():
-            # TODO: 실제로 데이터 올리는 루틴 작성 필요
+            # TODO: 시연을 위한 코드이므로 제거 필요
             for i in range(10):
                 progress = i * 10
                 self.progressBar.setValue(progress)
@@ -104,6 +105,8 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 time.sleep(1)
             self.btn_upload.setDisabled(True)
             self.btn_inspect.setDisabled(False)
+            # TODO: 수령 ID 보여주는 로직 추가
+            QMessageBox.information(self, u"작업완료", u"납품 데이터 올리기가 완료되었습니다.")
 
         self.progressBar.hide()
         self.lbl_progress.hide()
@@ -116,7 +119,6 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
             self.close()
 
     def fillWorkerList(self):
-        # TODO: 실제로 DB에서 자료 불러오게 수정 (수정_JS)
         self.cmb_worker_nm.clear()
         self.cmb_worker_nm.addItem('')
         cur = self.plugin.conn.cursor()
@@ -136,7 +138,6 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
     def searchExtjob(self, workerName, startDate, endDate):
         try:
-            # TODO: 날짜 조건이 잘 안맞는 문제 해결 ( column type 변경_JS )
             cur = self.plugin.conn.cursor()
             sql = u"SELECT extjob_id, extjob_nm FROM extjob.extjob_main " \
                   u"WHERE worker_nm = %s and mapext_dttm BETWEEN %s and %s"
@@ -171,6 +172,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
         cur.execute(sql)
         result = cur.fetchone()
+        # TODO: 실제 데이터가 있는 경우만 컴마로 분리
         item_list = result[0].split(',')
 
         for item in item_list:
@@ -181,22 +183,26 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
     def importRecData(self):
         try:
+            # 선택된 extjob_id 확보
+            extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
+            if extjob_id == "":
+                QMessageBox.warning(self, u"오류", u"적절한 작업명이 선택되지 않았습니다.")
+                return False
+
             if self.edt_data_folder.text() == "":
                 QMessageBox.warning(self, u"오류", u"폴더를 선택해 주시기 바랍니다")
                 return False
 
             # 수령ID, 수령 날짜 생성
             cur = self.conn.cursor()
-            sql = "SELECT nextid('RD') as extjob_id, current_timestamp as mapext_dttm"
+            sql = "SELECT nextid('RD') as receive_id, current_timestamp as mapext_dttm"
             cur.execute(sql)
             result = cur.fetchone()
+            if not result:
+                QMessageBox.error(self, u"오류", u"선택한 작업에 해당되는 데이터를 찾지 못했습니다. 관리자에게 문의해 주세요.")
+                return False
             receive_id = result[0]
             receive_dttm = result[1]
-            timestemp = "{}-{}-{} {}:{}:{}.{}" \
-                .format(receive_dttm.year, receive_dttm.month, receive_dttm.day,
-                        receive_dttm.hour, receive_dttm.minute, receive_dttm.second, receive_dttm.microsecond)
-
-            layer_nm = None
 
             # TODO: 기본 유휴성 검사?!
             for fileName in os.listdir(self.edt_data_folder.text()):
@@ -212,7 +218,10 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     else:
                         ogr2ogrPath = "/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/"
 
+                    # TODO: 만들려는 테이블이 이미 있는지 확인하여 있으면 확 지워버림
+
                     # 수정된 테이블 생성
+                    # TODO: dbf 파일의 인코딩 확인하여 결정하게 해야 함
                     command = u'{}ogr2ogr ' \
                               u'--config SHAPE_ENCODING UTF-8 -append -a_srs EPSG:5179 ' \
                               u'-f PostgreSQL PG:"host=localhost user=postgres dbname=sdmc password=postgres" ' \
@@ -220,26 +229,34 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                               .format(ogr2ogrPath, os.path.join(self.edt_data_folder.text(),fileName),table_nm)
                     rc = check_output(command.encode(), shell=True)
 
-                    sql = u"alter table extjob.{}_{} rename basedata_n to basedata_nm; " \
-                          u"alter table extjob.{}_{} rename mapext_dtt to mapext_dttm; " \
-                          u"alter table extjob.{}_{} rename basedata_d to basedata_dt"\
-                        .format(receive_id,layer_nm,receive_id,layer_nm,
-                                receive_id, layer_nm,receive_id,layer_nm)
+                    sql = u"alter table extjob.{0}_{1} rename basedata_n to basedata_nm; " \
+                          u"alter table extjob.{0}_{1} rename mapext_dtt to mapext_dttm; " \
+                          u"alter table extjob.{0}_{1} rename basedata_d to basedata_dt"\
+                        .format(receive_id, layer_nm)
 
                     cur.execute(sql)
 
-                    sql = u"ALTER TABLE extjob.{} ADD COLUMN receive_id character varying(16); " \
-                          u"UPDATE extjob.{} SET receive_id = '{}';  " \
-                          .format(table_nm,table_nm,receive_id)
+                    sql = u"ALTER TABLE extjob.{0} ADD COLUMN receive_id character varying(16); " \
+                          u"UPDATE extjob.{0} SET receive_id = '{1}';  " \
+                          .format(table_nm, receive_id)
                     cur.execute(sql)
 
+                    # TODO: 파일 내에 여러 extjob_id 가 있는 경우 대비하여 코딩 수정 필요
                     # receive_main import
                     sql = u'SELECT extjob_id FROM extjob.{} ' \
                           u'group by extjob_id having extjob_id is not NULL'.format(table_nm)
                     cur.execute(sql)
                     result_gruop = cur.fetchone()
 
-                    extjob_id = result_gruop[0]
+                    # 사용자가 선택한 extjob_id와 파일의 그것이 다를 때 대응
+                    # extjob_id = result_gruop[0]
+                    file_extjob_id = result_gruop[0]
+                    if extjob_id != file_extjob_id:
+                        rc = QMessageBox.question(self, u"경고", u"{} 파일의 외주ID({})가 선택한 작업의 외주ID({})와 다릅니다.\n"
+                                                  u"그래도 계속 하시겠습니까?".format(layer_nm, file_extjob_id, extjob_id),
+                                                  QMessageBox.Yes, QMessageBox.No)
+                        if rc != QMessageBox.Yes:
+                            continue  # 다음 레이어 처리로
 
                     sql = u'INSERT INTO extjob.receive_main VALUES(%s, %s, %s, %s)'
                     cur.execute(sql,(receive_id, extjob_id, layer_nm, receive_dttm))

@@ -37,10 +37,6 @@ from extjob_dialog import DlgExtjob
 from receive_dialog import DlgReceive
 from inspect_widget import WidgetInspect
 
-# === for PyCharm Debugging
-import pydevd
-# === for PyCharm Debugging
-
 # Make safe String for PostgreSQL
 def postgres_escape_string(s):
     if not isinstance(s, basestring):
@@ -169,12 +165,15 @@ class NgiiMapJobManager:
             self.crrWidget = None
         self.clearRb()
 
+    # === for PyCharm Debugging
     def attachPyDev(self):
+        import pydevd
         if not pydevd.connected:
             pydevd.settrace('localhost',
                             port=9999,
                             stdoutToServer=True,
                             stderrToServer=True)
+    # === for PyCharm Debugging
 
     def showDlgExtjob(self):
         self.dlgExtjob = DlgExtjob(self)
@@ -325,7 +324,6 @@ class NgiiMapJobManager:
                       u"and {} is not NULL)" \
                     .format(extjob_id, layer_nm, layer_nm, workarea_geom, column_nm)
                 cur.execute(sql)
-                self.conn.commit()
 
                 sql = u"SELECT {}.*, '{}' as extjob_id, " \
                       u"'{}' as mapext_dttm, {} as basedata_nm, '{}' as basedata_dt,{} as worker_nm FROM nfsd.{}" \
@@ -343,12 +341,17 @@ class NgiiMapJobManager:
                 else:
                     ogr2ogrPath = "/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/"
 
+                # TODO: 생산 대상 파일이 이미 있는지 확인
+
                 command = u'{}ogr2ogr ' \
                           u' --config SHAPE_ENCODING UTF-8 -f "ESRI Shapefile" {}.shp ' \
                           u'-t_srs EPSG:5179 PG:"host={} user={} dbname={} password={}" ' \
                           u'-sql "{}"'.format(ogr2ogrPath, shapeFileName, self.ip_address, self.account, self.database, self.password, sql)
                 rc = check_output(command.decode(), shell=True)
                 # TODO: 각 파일에 해당하는 *.cpg 파일이 생성되게 보완
+
+            # 모든 작업이 정상적일 때만 커밋하게 수정됨
+            self.conn.commit()
             # TODO: 모든 레이어가 문제 없을 때만 메시지 보이게 보완
             QMessageBox.information(self.crrWidget, u"작업 완료", u"작업용 수치지도 생성이 완료되었습니다.")
 
