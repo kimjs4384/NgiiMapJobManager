@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file '.\ui\extjob.ui'
 #
-# Created: Sun May 15 16:25:31 2016
+# Created: Sun May 15 17:57:03 2016
 #      by: PyQt4 UI code generator 4.10.2
 #
 # WARNING! All changes made in this file will be lost!
@@ -124,8 +124,7 @@ class Ui_Dialog(object):
         self.label_8 = QtGui.QLabel(self.layoutWidget1)
         self.label_8.setObjectName(_fromUtf8("label_8"))
         self.horizontalLayout_4.addWidget(self.label_8)
-        self.edt_mapbox = QtGui.QPlainTextEdit(self.layoutWidget1)
-        self.edt_mapbox.setMaximumSize(QtCore.QSize(16777215, 25))
+        self.edt_mapbox = QtGui.QLineEdit(self.layoutWidget1)
         self.edt_mapbox.setObjectName(_fromUtf8("edt_mapbox"))
         self.horizontalLayout_4.addWidget(self.edt_mapbox)
         self.btn_add_mapbox = QtGui.QPushButton(self.layoutWidget1)

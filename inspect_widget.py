@@ -29,6 +29,10 @@ from PyQt4.QtCore import *
 import psycopg2
 import time
 import ConfigParser
+#from docx import Document
+#from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from xml.etree.cElementTree import XML
+import zipfile
 
 from qgis.core import *
 
@@ -43,7 +47,9 @@ class WidgetInspect(QWidget, Ui_Form):
     title = u"납품 데이터 검수"
     objectName = "objWidgetInspect"
     plugin = None  # type: NgiiMapJobManager
-    crrIndex = 0
+    crrIndex = None
+    numTotal = -1
+    numProcessed = 0
 
     def __init__(self, iface, dockwidget, parent):
         QWidget.__init__(self)
@@ -230,24 +236,52 @@ class WidgetInspect(QWidget, Ui_Form):
         self.countDiffFeature()
 
     def hdrClickBtnNext(self):
-        self.crrIndex += 1
-        if self.crrIndex >= len(self.inspectList):
-            self.crrIndex = 0
-
-        self.lbl_progress.setText(u"{} / {} 처리중".format(self.crrIndex+1, len(self.inspectList)))
-
-        geom = self.inspectList[self.crrIndex].geometry()
-        bound = geom.boundingBox()
-        canvas = self.plugin.iface.mapCanvas()
-        canvas.setExtent(bound)
-        canvas.refresh()
+        self.iterCurrentObj(True)
 
     def hdrClickBtnPrev(self):
-        self.crrIndex -= 1
-        if self.crrIndex < 0:
-            self.crrIndex = len(self.inspectList)-1
+        self.iterCurrentObj(False)
 
-        self.lbl_progress.setText(u"{} / {} 처리중".format(self.crrIndex+1, len(self.inspectList)))
+    def iterCurrentObj(self, forward=True):
+        # 초기화 되지 않으면 동작 안되게
+        if self.crrIndex is None:
+            return
+
+        if forward:
+            self.crrIndex += 1
+            if self.crrIndex >= len(self.inspectList):
+                self.crrIndex = 0
+        else:
+            self.crrIndex -= 1
+            if self.crrIndex < 0:
+                self.crrIndex = len(self.inspectList)-1
+
+        crrFeature = self.inspectList[self.crrIndex]
+        mod_type = crrFeature['mod_type']
+        res = crrFeature['inspect_res']
+        self.edt_reject_reason.clear()
+
+        mod_type_txt = ""
+        if mod_type == "a":
+            mod_type_txt = u"추가"
+        elif mod_type == "r":
+            mod_type_txt = u"삭제"
+        elif mod_type == "eg":
+            mod_type_txt = u"도형변경"
+        elif mod_type == "ef":
+            mod_type_txt = u"속성변경"
+
+        insp_stat_txt = ""
+        if res == "accept":
+            insp_stat_txt = u"승인됨"
+        elif res == "reject":
+            insp_stat_txt = u"거부됨"
+            self.edt_reject_reason.setPlainText(crrFeature['reject_reason'])
+        else:
+            insp_stat_txt = u"미검수"
+
+        message = u"{}/{}(미검수 {}개) : {}({})".format(self.crrIndex+1, self.numTotal, self.numTotal-self.numProcessed,
+                                                    mod_type_txt, insp_stat_txt)
+        self.lbl_progress.setText(message)
 
         geom = self.inspectList[self.crrIndex].geometry()
         bound = geom.boundingBox()
@@ -256,51 +290,79 @@ class WidgetInspect(QWidget, Ui_Form):
         canvas.refresh()
 
     def hdrClickBtnAccept(self):
-        if self.crrIndex >= 0:
-            crrFeature = self.inspectList[self.crrIndex]
-            origin_ogc_fid = crrFeature['origin_ogc_fid']
-            receive_ogc_fid = crrFeature['receive_ogc_fid']
+        # 초기화 되지 않으면 동작 안되게
+        if self.crrIndex < 0:
+            return
 
-            cur = self.plugin.conn.cursor()
-            sql = u"update extjob.inspect_objlist set inspect_res = 'accept', inspect_dttm = CURRENT_TIMESTAMP  " \
-                  u"where inspect_id = '{}' and layer_nm = '{}' " \
-                  u"and origin_ogc_fid = {} and receive_ogc_fid = {}"\
-                .format(self.inspect_id, self.layer_nm, origin_ogc_fid, receive_ogc_fid)
-            cur.execute(sql)
+        crrFeature = self.inspectList[self.crrIndex]
+        origin_ogc_fid = crrFeature['origin_ogc_fid']
+        receive_ogc_fid = crrFeature['receive_ogc_fid']
+        res = crrFeature['inspect_res']
+        if res:
+            rc = QMessageBox.question(self, u"주의", u"이미 처리한 객체입니다. \n"
+                                              u"승인상태를 변경하시겠습니까?"
+                                 , QMessageBox.Yes, QMessageBox.No)
+            if rc != QMessageBox.Yes:
+                return
+            self.numProcessed -= 1
 
-            self.plugin.conn.commit()
+        crrFeature['inspect_res'] = 'accept'
+        crrFeature['reject_reason'] = ''
+
+        cur = self.plugin.conn.cursor()
+        sql = u"update extjob.inspect_objlist set inspect_res = 'accept', inspect_dttm = CURRENT_TIMESTAMP  " \
+              u"where inspect_id = '{}' and layer_nm = '{}' " \
+              u"and origin_ogc_fid = {} and receive_ogc_fid = {}"\
+            .format(self.inspect_id, self.layer_nm, origin_ogc_fid, receive_ogc_fid)
+        cur.execute(sql)
+
+        self.plugin.conn.commit()
 
         self.edt_reject_reason.setPlainText("")
-        self.hdrClickBtnNext()
-
+        self.numProcessed += 1
+        self.iterCurrentObj()
 
     def hdrClickBtnReject(self):
+        # 초기화 되지 않으면 동작 안되게
+        if self.crrIndex < 0:
+            return
+
         rejectReason = self.edt_reject_reason.toPlainText()
         if rejectReason == "":
             QMessageBox.warning(self, u"주의", u"거부사유를 입력하셔야 합니다.")
             return
 
-        if self.crrIndex >= 0:
-            crrFeature = self.inspectList[self.crrIndex]
-            origin_ogc_fid = crrFeature['origin_ogc_fid']
-            receive_ogc_fid = crrFeature['receive_ogc_fid']
+        crrFeature = self.inspectList[self.crrIndex]
+        origin_ogc_fid = crrFeature['origin_ogc_fid']
+        receive_ogc_fid = crrFeature['receive_ogc_fid']
+        res = crrFeature['inspect_res']
+        if res:
+            rc = QMessageBox.question(self, u"주의", u"이미 처리한 객체입니다. \n"
+                                                   u"승인상태를 변경하시겠습니까?"
+                                      , QMessageBox.Yes, QMessageBox.No)
+            if rc != QMessageBox.Yes:
+                return
+            self.numProcessed -= 1
 
-            cur = self.plugin.conn.cursor()
-            sql = u"update extjob.inspect_objlist set inspect_res = 'reject', inspect_dttm = CURRENT_TIMESTAMP, " \
-                  u"reject_reason = '{}' " \
-                  u"where inspect_id = '{}' and layer_nm = '{}' " \
-                  u"and origin_ogc_fid = {} and receive_ogc_fid = {}" \
-                .format(rejectReason, self.inspect_id, self.layer_nm, origin_ogc_fid, receive_ogc_fid)
-            cur.execute(sql)
+        crrFeature['inspect_res'] = 'reject'
+        crrFeature['reject_reason'] = rejectReason
 
-            self.plugin.conn.commit()
+        cur = self.plugin.conn.cursor()
+        sql = u"update extjob.inspect_objlist set inspect_res = 'reject', inspect_dttm = CURRENT_TIMESTAMP, " \
+              u"reject_reason = '{}' " \
+              u"where inspect_id = '{}' and layer_nm = '{}' " \
+              u"and origin_ogc_fid = {} and receive_ogc_fid = {}" \
+            .format(rejectReason, self.inspect_id, self.layer_nm, origin_ogc_fid, receive_ogc_fid)
+        cur.execute(sql)
+
+        self.plugin.conn.commit()
 
         self.edt_reject_reason.setPlainText("")
-        self.hdrClickBtnNext()
+        self.numProcessed += 1
+        self.iterCurrentObj()
 
     def findDiff(self):
         try:
-            # TODO: 테이블 비교를 통해서 차이 분석
             # 외주 정보를 통해서 view를 만듦
             self.layer_nm = self.cmb_layer_nm.currentText()
 
@@ -336,16 +398,16 @@ class WidgetInspect(QWidget, Ui_Form):
 
             # 속성, 지오메트리 까지 같은 데이터
             self.findSame()
-            time.sleep(1)
+            # time.sleep(1)
             # 속성은 같고 지오메트리만 바뀐 데이터
             self.findEditOnlyGeomety()
-            time.sleep(1)
+            # time.sleep(1)
             # 속성만 바뀐 데이터
             self.findEditAttr()
-            time.sleep(1)
+            # time.sleep(1)
             # 삭제된 데이터
             self.findDel()
-            time.sleep(1)
+            # time.sleep(1)
             # 추가된 데이터
             self.findAdd()
 
@@ -541,6 +603,12 @@ class WidgetInspect(QWidget, Ui_Form):
         for feature in iter:
             self.inspectList.append(feature)
 
+        self.numTotal = len(self.inspectList)
+        self.numProcessed = 0
+
+        # 첫번째 객체로 가기
+        self.iterCurrentObj(True)
+
     def insertInspectInfo(self):
         # 검수ID, 검수 날짜 생성
         cur = self.plugin.conn.cursor()
@@ -555,15 +623,19 @@ class WidgetInspect(QWidget, Ui_Form):
         self.inspecter = self.edt_inpector.text()
 
         # TODO: Secure Coding
+        # sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm) " \
+        #       u"VALUES ('{}','{}','{}','{}','{}')"\
+        #     .format(self.inspect_id, self.extjob_id, self.receive_id, inspect_dttm, self.inspecter)
+        # cur.execute(sql)
         sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm) " \
-              u"VALUES ('{}','{}','{}','{}','{}')"\
-            .format(self.inspect_id, self.extjob_id, self.receive_id, inspect_dttm, self.inspecter)
-        cur.execute(sql)
+              u"VALUES (%s, %s, %s, %s, %s)"
+        cur.execute(sql, (self.inspect_id, self.extjob_id, self.receive_id, inspect_dttm, self.inspecter))
 
         self.plugin.conn.commit()
 
     def countDiffFeature(self):
         cur = self.plugin.conn.cursor()
+        # TODO: Secure Coding
         sql = u"select mod_type, count(mod_type) as count " \
               u"from ( select * from extjob.inspect_objlist " \
               u"where layer_nm = '{}' and inspect_id = '{}') as ext " \
@@ -590,5 +662,97 @@ class WidgetInspect(QWidget, Ui_Form):
 
         self.lbl_progress.setText(info)
 
+    # http://etienned.github.io/posts/extract-text-from-word-docx-simply/
     def hdrClickBtnMakeReport(self):
-        pass
+        if self.numTotal != self.numProcessed:
+            rc = QMessageBox.question(self, u"확인", u"아직 검수하지 않은 객체가 {}개 있습니다.\n"
+                                                   u"그래도 검수 리포트를 작성하시겠습니까?".format(self.numTotal-self.numProcessed)
+                                      , QMessageBox.Yes, QMessageBox.No)
+            if rc != QMessageBox.Yes:
+                return
+
+        # 결과 탐지 수행
+        numAdd = 0
+        numRemove = 0
+        numEditGeom = 0
+        numEditAttr = 0
+        numAccept = 0
+        numReject = 0
+        numMiss = 0
+        rejectObjList = []
+        for obj in self.inspectList:
+            # 변경탐지 결과 요약
+            mod_type = obj['mod_type']
+            insp_res = obj['inspect_res']
+
+            if mod_type == "a":
+                numAdd += 1
+            elif mod_type == "r":
+                numRemove += 1
+            elif mod_type == "eg":
+                numEditGeom += 1
+            elif mod_type == "ef":
+                numEditAttr += 1
+
+            # 검수결과 요약 (승인, 거부, 미검수)
+            if insp_res == "accept":
+                numAccept += 1
+            elif insp_res == "reject":
+                numReject += 1
+            else:
+                numMiss += 1
+
+    #     # 문서 생성
+    #     document = Document()
+    #     document.add_heading(u'납품 데이터 검수 결과', 0)
+    #     p = document.add_paragraph(u'검수일: {}\n검수자: {}'.format('2015-05-16', self.edt_inpector.text()))
+    #     p.add_run('bold').bold = True
+    #     p.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+    #
+    #     document.add_heading(u'변경탐지 결과 요약', 1)
+    #     document.add_paragraph(
+    #         u'추가된 객체: {} 개'.format(numAdd), style='ListBullet'
+    #     )
+    #     document.add_paragraph(
+    #         u'삭제된 객체: {} 개'.format(numRemove), style='ListBullet'
+    #     )
+    #     document.add_paragraph(
+    #         u'도형변경 객체: {} 개'.format(numEditGeom), style='ListBullet'
+    #     )
+    #     document.add_paragraph(
+    #         u'속성변경 객체: {} 개'.format(numEditAttr), style='ListBullet'
+    #     )
+    #
+    #     document.add_heading(u'검수 결과 요약', 1)
+    #     document.add_paragraph(
+    #         u'승인된 객체: {} 개'.format(numAccept), style='ListBullet'
+    #     )
+    #     document.add_paragraph(
+    #         u'거부된 객체: {} 개'.format(numReject), style='ListBullet'
+    #     )
+    #     document.add_paragraph(
+    #         u'미검수 객체: {} 개'.format(numMiss), style='ListBullet'
+    #     )
+    #
+    #     document.add_heading(u'검수 결과 상세', 1)
+    #     for obj in rejectObjList:
+    #         # 객체 스냅샷
+    #         # document.add_picture('monty-truth.png', width=Cm(5))
+    #
+    #         # 객체 속성
+    #         table = document.add_table(rows=1, cols=3)
+    #         hdr_cells = table.rows[0].cells
+    #         hdr_cells[0].text = u'속성'
+    #         hdr_cells[1].text = u'값'
+    #         for key in obj.keys():
+    #             row_cells = table.add_row().cells
+    #             row_cells[0].text = key
+    #             row_cells[1].text = obj[key]
+    #
+    #     document.save('demo.docx')
+
+        # WORD_NAMESPACE = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+        # PARA = WORD_NAMESPACE + 'p'
+        # TEXT = WORD_NAMESPACE + 't'
+        #
+        # document = zipfile.ZipFile("c:\\Temp\\TestResult.docx")
