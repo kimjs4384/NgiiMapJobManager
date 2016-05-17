@@ -209,13 +209,14 @@ class WidgetInspect(QWidget, Ui_Form):
         if rc != QMessageBox.Yes:
             return
 
+        # 변경된 데이터가 하나도 없을 경우 불필요함으로 변경 유무를 판단하는 곳으로 이동
         # self.btn_start_inspect.setDisabled(True)
-        self.btn_start_inspect.setVisible(False)  # 자리가 좁아 안보이게 하는 것으로 수정
-        self.btn_accept.setDisabled(False)
-        self.btn_next.setDisabled(False)
-        self.btn_prev.setDisabled(False)
-        self.btn_reject.setDisabled(False)
-        self.btn_make_report.setDisabled(False)
+        # self.btn_start_inspect.setVisible(False)  # 자리가 좁아 안보이게 하는 것으로 수정
+        # self.btn_accept.setDisabled(False)
+        # self.btn_next.setDisabled(False)
+        # self.btn_prev.setDisabled(False)
+        # self.btn_reject.setDisabled(False)
+        # self.btn_make_report.setDisabled(False)
 
         self.findChange()
 
@@ -232,8 +233,18 @@ class WidgetInspect(QWidget, Ui_Form):
         # 변화정보를 QGIS에 띄움
         self.addLayers()
 
-        # 변화정보 양을 세서 보여줌
-        self.countDiffFeature()
+        if self.numTotal > 0:
+            self.btn_start_inspect.setVisible(False)  # 자리가 좁아 안보이게 하는 것으로 수정
+            self.btn_accept.setDisabled(False)
+            self.btn_next.setDisabled(False)
+            self.btn_prev.setDisabled(False)
+            self.btn_reject.setDisabled(False)
+            self.btn_make_report.setDisabled(False)
+            # 변화정보 양을 세서 보여줌
+            self.countDiffFeature()
+        else:
+            QMessageBox.information(self, u"탐지결과", u"변경된 데이터가 없습니다.")
+            self.lbl_progress.setText(u"변경 사항 없음")
 
     def hdrClickBtnNext(self):
         self.iterCurrentObj(True)
@@ -396,6 +407,23 @@ class WidgetInspect(QWidget, Ui_Form):
             self.column_sql = ','.join(column_nm)
             self.id_column = column_nm[0]
 
+            # TODO: geometry 타입에 따라서 GeoHash 알고리즘을 바꿔야함
+            # 테이블의 geometry를 가져옴
+            sql = u"select GeometryType(wkb_geometry) from nfsd.{} limit 1".format(self.layer_nm)
+            cur.execute(sql)
+            result = cur.fetchone()
+
+            geom_type = result[0]
+
+            if geom_type == 'MULTIPOLYGON': # 폴리곤 일때는 GeoHash 와 면적 생성
+                self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_boundary(wkb_geometry)), 4326), ' \
+                                   u'12) as mbr_hash_12, round( CAST(st_area(wkb_geometry) as numeric), 1) as geom_area'
+            elif geom_type == 'MULTILINESTRING': # 선 일때는 GeoHash 와 길이 생성
+                self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_boundary(wkb_geometry)), 4326), 12) ' \
+                                   u'as mbr_hash_12, round( CAST(st_length(wkb_geometry) as numeric), 1) as geom_length'
+            else: # 점 일때는 GeoHash 만 생성
+                self.geohash_sql = u'st_geohash(ST_Transform(wkb_geometry, 4326), 12) as mbr_hash_12'
+
             # 속성, 지오메트리 까지 같은 데이터
             self.findSame()
             # time.sleep(1)
@@ -403,7 +431,7 @@ class WidgetInspect(QWidget, Ui_Form):
             self.findEditOnlyGeomety()
             # time.sleep(1)
             # 속성만 바뀐 데이터
-            self.findEditAttr()
+            self.findEditAttr(geom_type)
             # time.sleep(1)
             # 삭제된 데이터
             self.findDel()
@@ -425,70 +453,102 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def findSame(self):
         cur = self.plugin.conn.cursor()
-        sql = u"with same_data as ( select o.* from (select wkb_geometry,{} from extjob.{}_view) as o " \
-              u"inner join (select wkb_geometry,{} from extjob.{}_{}) as e on (o.*) = (e.*) )," \
-              u"origin as ( select o.ogc_fid as origin_ogc_fid, a.{} from same_data as a " \
-              u"inner join extjob.{}_view as o on a.wkb_geometry = o.wkb_geometry )," \
-              u"receive as (select o.ogc_fid as receive_ogc_fid, a.{} from same_data as a " \
-              u"inner join extjob.{}_{} as o on a.wkb_geometry = o.wkb_geometry) " \
+
+        sql = u"with same_data as ( select o.* from (select {0},{1} from extjob.{2}_view) as o " \
+              u"inner join (select {0},{1} from extjob.{3}_{2}) as e on (o.*) = (e.*) )," \
+              u"origin as ( select o.ogc_fid as origin_ogc_fid, a.{4} from same_data as a " \
+              u"inner join extjob.{2}_view as o on a.{4} = o.{4} )," \
+              u"receive as (select o.ogc_fid as receive_ogc_fid, a.{4} from same_data as a " \
+              u"inner join extjob.{3}_{2} as o on a.{4} = o.{4} ) " \
               u"insert into extjob.inspect_objlist( inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )" \
-              u"select '{}' as inspect_id, '{}' as layer_nm, origin_ogc_fid, receive_ogc_fid, " \
-              u"'s' as mod_type from origin, receive where origin.{} = receive.{}"\
-            .format(self.column_sql,self.layer_nm,self.column_sql,self.receive_id,self.layer_nm, self.id_column,
-                    self.layer_nm, self.id_column, self.receive_id, self.layer_nm, self.inspect_id,self.layer_nm,
-                    self.id_column,self.id_column)
+              u"select '{5}' as inspect_id, '{2}' as layer_nm, origin_ogc_fid, receive_ogc_fid, " \
+              u"'s' as mod_type from origin, receive where origin.{4} = receive.{4}"\
+            .format(self.column_sql,self.geohash_sql,self.layer_nm,self.receive_id,self.id_column,self.inspect_id)
         self.sql_rep.write("same_data : " + sql + "\n")
         cur.execute(sql)
 
     def findEditOnlyGeomety(self):
         cur = self.plugin.conn.cursor()
 
-        sql = u"with attr_same_data as (select o.* from (select {} from extjob.{}_view) as o " \
-              u"inner join (select {} from extjob.{}_{}) as e on (o.*) = (e.*) ), " \
-              u"same_data as( select wkb_geometry,{} from " \
-              u"(select origin_ogc_fid from extjob.inspect_objlist where mod_type = 's' and inspect_id = '{}') as s " \
-              u"inner join extjob.{}_view as o on s.origin_ogc_fid = o.ogc_fid), " \
+        sql = u"with attr_same_data as (select o.* from (select {0} from extjob.{1}_view) as o " \
+              u"inner join (select {0} from extjob.{2}_{1}) as e on (o.*) = (e.*) ), " \
+              u"same_data as( select wkb_geometry,{0} from " \
+              u"(select origin_ogc_fid from extjob.inspect_objlist where mod_type = 's' and inspect_id = '{3}') as s " \
+              u"inner join extjob.{1}_view as o on s.origin_ogc_fid = o.ogc_fid), " \
               u"join_geom as ( select o.wkb_geometry, a.* from attr_same_data as a " \
-              u"inner join extjob.{}_view as o on a.{} = o.{} ), " \
+              u"inner join extjob.{1}_view as o on a.{4} = o.{4} ), " \
               u"geo_edit as ( select * from join_geom except select * from same_data) " \
               u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
-              u"select '{}' as inspect_id, '{}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'eg' as mod_type " \
-              u"from (select ogc_fid as origin_ogc_fid,e.{} from geo_edit as e " \
-              u"inner join extjob.{}_view as o on e.{} = o.{}) as origin, " \
-              u"(select ogc_fid as receive_ogc_fid,e.{} from geo_edit as e " \
-              u"inner join extjob.{}_{} as o on e.{} = o.{}) as edit where origin.{} = edit.{}"\
-            .format(self.column_sql, self.layer_nm, self.column_sql, self.receive_id, self.layer_nm, self.column_sql,
-                    self.inspect_id, self.layer_nm, self.layer_nm, self.id_column, self.id_column, self.inspect_id,
-                    self.layer_nm, self.id_column, self.layer_nm, self.id_column, self.id_column, self.id_column,
-                    self.receive_id, self.layer_nm, self.id_column, self.id_column, self.id_column, self.id_column)
+              u"select '{3}' as inspect_id, '{1}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'eg' as mod_type " \
+              u"from (select ogc_fid as origin_ogc_fid,e.{4} from geo_edit as e " \
+              u"inner join extjob.{1}_view as o on e.{4} = o.{4}) as origin, " \
+              u"(select ogc_fid as receive_ogc_fid,e.{4} from geo_edit as e " \
+              u"inner join extjob.{2}_{1} as o on e.{4} = o.{4}) as edit where origin.{4} = edit.{4}"\
+            .format(self.column_sql, self.layer_nm, self.receive_id, self.inspect_id, self.id_column)
         self.sql_rep.write("edit_geom_data : " + sql + "\n")
         cur.execute(sql)
 
-    def findEditAttr(self):
+    def findEditAttr(self,geom_type):
         cur = self.plugin.conn.cursor()
-        geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_boundary(wkb_geometry)), 4326), ' \
-                      u'12) as mbr_hash_12, round( CAST(st_area(wkb_geometry) as numeric), 1) as geom_area'
+        # TODO: 타입별로 비교하는 조건이 조금씩 다름
+        if geom_type == 'MULTIPOLYGON':  # 폴리곤 일때는 GeoHash 와 면적 생성
+            sql = u"with same as (select {0}, {1} from (select origin_ogc_fid from extjob.inspect_objlist " \
+                  u"where mod_type = 's' and inspect_id = '{2}') as s " \
+                  u"inner join extjob.{3}_view as o on s.origin_ogc_fid = o.ogc_fid), " \
+                  u"om as (select {0}, {1} from extjob.{3}_view except select * from same ), " \
+                  u"em as (select {0}, {1} from extjob.{4}_{3} except select * from same ), " \
+                  u"geometry as ( select mbr_hash_12,geom_area from ( select om.* from om " \
+                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 and em.geom_area = om.geom_area) as t) " \
+                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+                  u"select '{2}' as inspect_id, '{3}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
+                  u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12, o.geom_area from geometry " \
+                  u"inner join (select ogc_fid, {1} from extjob.{3}_view ) as o " \
+                  u"on (geometry.mbr_hash_12,geometry.geom_area)=(o.mbr_hash_12,o.geom_area)) as origin, " \
+                  u"(select ogc_fid as receive_ogc_fid, o.mbr_hash_12, o.geom_area from geometry " \
+                  u"inner join (select ogc_fid, {1} from extjob.{4}_{3} ) as o " \
+                  u"on (geometry.mbr_hash_12,geometry.geom_area)=(o.mbr_hash_12,o.geom_area)) as receive " \
+                  u"where (origin.mbr_hash_12,origin.geom_area) = (receive.mbr_hash_12,receive.geom_area)" \
+                .format(self.column_sql, self.geohash_sql, self.inspect_id,
+                        self.layer_nm, self.receive_id)
+        elif geom_type == 'MULTILINESTRING':  # 선 일때는 GeoHash 와 길이 생성
+            sql = u"with same as (select {0}, {1} from (select origin_ogc_fid from extjob.inspect_objlist " \
+                  u"where mod_type = 's' and inspect_id = '{2}') as s " \
+                  u"inner join extjob.{3}_view as o on s.origin_ogc_fid = o.ogc_fid), " \
+                  u"om as (select {0}, {1} from extjob.{3}_view except select * from same ), " \
+                  u"em as (select {0}, {1} from extjob.{4}_{3} except select * from same ), " \
+                  u"geometry as ( select mbr_hash_12,geom_length from ( select om.* from om " \
+                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 and em.geom_length = om.geom_length) as t) " \
+                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+                  u"select '{2}' as inspect_id, '{3}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
+                  u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12, o.geom_length from geometry " \
+                  u"inner join (select ogc_fid, {1} from extjob.{3}_view ) as o " \
+                  u"on (geometry.mbr_hash_12,geometry.geom_length)=(o.mbr_hash_12,o.geom_length)) as origin, " \
+                  u"(select ogc_fid as receive_ogc_fid, o.mbr_hash_12, o.geom_length from geometry " \
+                  u"inner join (select ogc_fid, {1} from extjob.{4}_{3} ) as o " \
+                  u"on (geometry.mbr_hash_12,geometry.geom_length)=(o.mbr_hash_12,o.geom_length)) as receive " \
+                  u"where (origin.mbr_hash_12,origin.geom_length) = (receive.mbr_hash_12,receive.geom_length)" \
+                .format(self.column_sql, self.geohash_sql, self.inspect_id,
+                        self.layer_nm, self.receive_id)
+        else:  # 점 일때는 GeoHash 만 생성
+            sql = u"with same as (select {0}, {1} from (select origin_ogc_fid from extjob.inspect_objlist " \
+                  u"where mod_type = 's' and inspect_id = '{2}') as s " \
+                  u"inner join extjob.{3}_view as o on s.origin_ogc_fid = o.ogc_fid), " \
+                  u"om as (select {0}, {1} from extjob.{3}_view except select * from same ), " \
+                  u"em as (select {0}, {1} from extjob.{4}_{3} except select * from same ), " \
+                  u"geometry as ( select mbr_hash_12 from ( select om.* from om " \
+                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 ) as t) " \
+                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+                  u"select '{2}' as inspect_id, '{3}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
+                  u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12 from geometry " \
+                  u"inner join (select ogc_fid, {1} from extjob.{3}_view ) as o " \
+                  u"on geometry.mbr_hash_12= o.mbr_hash_12) as origin, " \
+                  u"(select ogc_fid as receive_ogc_fid, o.mbr_hash_12 from geometry " \
+                  u"inner join (select ogc_fid, {1} from extjob.{4}_{3} ) as o " \
+                  u"on geometry.mbr_hash_12 = o.mbr_hash_12) as receive " \
+                  u"where origin.mbr_hash_12 = receive.mbr_hash_12" \
+                .format(self.column_sql, self.geohash_sql, self.inspect_id,
+                        self.layer_nm, self.receive_id)
 
-        sql = u"with same as (select {}, {} from (select origin_ogc_fid from extjob.inspect_objlist " \
-              u"where mod_type = 's' and inspect_id = '{}') as s " \
-              u"inner join extjob.{}_view as o on s.origin_ogc_fid = o.ogc_fid), " \
-              u"om as (select {}, {} from extjob.{}_view except select * from same ), " \
-              u"em as (select {}, {} from extjob.{}_{} except select * from same ), " \
-              u"geometry as ( select mbr_hash_12,geom_area from ( select om.* from om " \
-              u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 and em.geom_area = om.geom_area) as t) " \
-              u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
-              u"select '{}' as inspect_id, '{}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
-              u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12, o.geom_area from geometry " \
-              u"inner join (select ogc_fid, {} from extjob.{}_view ) as o " \
-              u"on (geometry.mbr_hash_12,geometry.geom_area)=(o.mbr_hash_12,o.geom_area)) as origin, " \
-              u"(select ogc_fid as receive_ogc_fid, o.mbr_hash_12, o.geom_area from geometry " \
-              u"inner join (select ogc_fid, {} from extjob.{}_{} ) as o " \
-              u"on (geometry.mbr_hash_12,geometry.geom_area)=(o.mbr_hash_12,o.geom_area)) as receive " \
-              u"where (origin.mbr_hash_12,origin.geom_area) = (receive.mbr_hash_12,receive.geom_area)"\
-            .format(self.column_sql, geohash_sql, self.inspect_id, self.layer_nm, self.column_sql,
-                    geohash_sql, self.layer_nm, self.column_sql, geohash_sql, self.receive_id,
-                    self.layer_nm, self.inspect_id, self.layer_nm, geohash_sql, self.layer_nm,
-                    geohash_sql, self.receive_id, self.layer_nm )
         self.sql_rep.write("edit_feature_data : " + sql + "\n")
         cur.execute(sql)
 
@@ -543,13 +603,13 @@ class WidgetInspect(QWidget, Ui_Form):
         symbol = None
         if maintain_data.wkbType() == QGis.WKBMultiPolygon:
             symbol = QgsFillSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
-                                                     'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
+                                                     'style': 'no', 'style_border': 'solid'})
         elif maintain_data.wkbType() == QGis.WKBMultiLineString:
-            symbol = QgsLineSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
-                                                     'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
+            symbol = QgsLineSymbolV2().createSimple({'color': 'black', 'width': '0.25',
+                                                     'style': 'solid'})
         else:
-            symbol = QgsMarkerSymbolV2.createSimple({'color': 'black', 'size': '0.25',
-                                                     'style_border': 'no', 'unit': 'MapUnit'})
+            symbol = QgsMarkerSymbolV2.createSimple({'name': 'circle', 'color': 'black', 'width': '1.5',
+                                                     'outline_style': 'no'})
 
         maintain_data.rendererV2().setSymbol(symbol)
         QgsMapLayerRegistry.instance().addMapLayer(maintain_data)
@@ -581,13 +641,13 @@ class WidgetInspect(QWidget, Ui_Form):
         for mod_type, (color, label) in mod_type_symbol.items():
             if diff_data_type == QGis.WKBMultiPolygon:
                 symbol = QgsFillSymbolV2().createSimple({'color_border': color, 'width_border': '0.25',
-                                                      'style': 'no', 'style_border': 'solid', 'unit': 'MapUnit'})
+                                                      'style': 'no', 'style_border': 'solid'})
             elif diff_data_type == QGis.WKBMultiLineString:
                 symbol = QgsLineSymbolV2().createSimple({'color': color, 'width': '0.25',
-                                                         'style': 'solid', 'unit': 'MapUnit'})
+                                                         'style': 'solid'})
             else:
-                symbol = QgsMarkerSymbolV2.createSimple({'color': 'black', 'size': '0.25',
-                                                         'style_border': 'no', 'unit': 'MapUnit'})
+                symbol = QgsMarkerSymbolV2.createSimple({'name': 'circle', 'color': color , 'width': '1.5',
+                                                         'outline_style': 'no'})
             category = QgsRendererCategoryV2(mod_type, symbol, label)
             categories.append(category)
 
@@ -605,6 +665,10 @@ class WidgetInspect(QWidget, Ui_Form):
 
         self.numTotal = len(self.inspectList)
         self.numProcessed = 0
+
+        # 변경된 데이터가 없을 경우
+        if self.numTotal <= 0:
+            return
 
         # 첫번째 객체로 가기
         self.iterCurrentObj(True)
