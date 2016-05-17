@@ -87,7 +87,12 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         self.btn_add_admin.clicked.connect(self.hdrClickAddAdmin)
         self.btn_add_mapbox.clicked.connect(self.hdrClickAddMapbox)
         self.btn_gendata.clicked.connect(self.hdrClickGenData)
-        # self.close.connect(self.hdrClose)
+        #self.close.connect(self.hdrClose)
+
+    # 대화상자 닫히는 것은 그냥 이벤트 캐치로 안되고 부모 클래스 함수를 오버라이드 해야 한다.
+    def closeEvent(self, evnt):
+        self.hdrClose()
+        super(DlgExtjob, self).closeEvent(evnt)
 
     def fillWorkerList(self):
         # TODO: 설정파일에서 업체 리스트 부르게 수정
