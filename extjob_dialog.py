@@ -97,7 +97,6 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         super(DlgExtjob, self).closeEvent(evnt)
 
     def fillWorkerList(self):
-        # TODO: 설정파일에서 업체 리스트 부르게 수정
         self.cmb_worker_nm.clear()
 
         conf = ConfigParser.SafeConfigParser()
@@ -124,10 +123,14 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         self.edt_extjob_nm.setText(title)
 
     def hdrClickSelectFile(self):
-        # 이미지 파일만 선택할 수 있도록 제한
+        conf = ConfigParser.SafeConfigParser()
+        conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
+
+        # 이미지 파일, 도면만 선택 가능
         fileFilter = "Image Files (*.jpg *.png *.gif *.tif);;DXF Files (*.dxf)"
-        fileName = QFileDialog.getOpenFileName(self.plugin.iface.mainWindow(),
-                                                          u'배경 자료를 선택해 주십시오.',"/Users/jsKim-pc/Desktop",fileFilter)
+        fileName = QFileDialog.getOpenFileName(self.plugin.iface.mainWindow(), u'배경 자료를 선택해 주십시오.',
+                                               conf.get('Dir_Info','basemap_dir'),fileFilter)
+
         self.edt_basedata_nm.setText(fileName)
 
         base_fileName = os.path.basename(fileName)
@@ -135,6 +138,10 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
             self.rdo_basetype_map.setChecked(True)
         else:
             self.rdo_basetype_photo.setChecked(True)
+
+        with open(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"), "w") as confFile:
+            conf.set("Dir_Info", "basemap_dir", os.path.dirname(fileName))
+            conf.write(confFile)
 
     def getSidoList(self):
         try:
@@ -316,10 +323,10 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
 
         folderPath = QFileDialog.getExistingDirectory(self.plugin.iface.mainWindow(),
-                                                          u'자료를 생성할 폴더를 선택해 주십시오.',conf.get("Dir_Info", "dir"))
+                                                 u'자료를 생성할 폴더를 선택해 주십시오.',conf.get("Dir_Info", "extjob_dir"))
 
         with open(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"), "w") as confFile:
-            conf.set("Dir_Info", "dir", folderPath)
+            conf.set("Dir_Info", "extjob_dir", folderPath)
             conf.write(confFile)
 
         if folderPath:
@@ -332,7 +339,6 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
             self.hdrClose()
 
     def hdrClose(self):
-        # TODO: 업체 리스트를 설정파일에 저장하게
         conf = ConfigParser.SafeConfigParser()
         conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
 
