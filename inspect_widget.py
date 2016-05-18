@@ -393,7 +393,7 @@ class WidgetInspect(QWidget, Ui_Form):
 
             # 검사하려는 테이블의 칼럼을 shp list로 만듦
             sql = "select column_name from information_schema.columns " \
-                  "where table_schema = 'nfsd' and table_name = '{}'".format(self.layer_nm)
+                  "where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(self.layer_nm)
             cur.execute(sql)
             column_nm = []
             results = cur.fetchall()
@@ -405,10 +405,9 @@ class WidgetInspect(QWidget, Ui_Form):
             column_nm.remove('wkb_geometry')
 
             self.column_sql = ','.join(column_nm)
-            # TODO: 첫번째 칼럼이 ID라는 보장...
+
             self.id_column = column_nm[0]
 
-            # TODO: geometry 타입에 따라서 GeoHash 알고리즘을 바꿔야함
             # 테이블의 geometry를 가져옴
             sql = u"select GeometryType(wkb_geometry) from nfsd.{} limit 1".format(self.layer_nm)
             cur.execute(sql)
@@ -503,7 +502,7 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def findEditAttr(self):
         cur = self.plugin.conn.cursor()
-        # TODO: 타입별로 비교하는 조건이 조금씩 다름
+
         if self.geom_type == 'MULTIPOLYGON':  # 폴리곤 일때는 GeoHash 와 면적 생성
             sql = u"with same as (select {0}, {1} from (select origin_ogc_fid from extjob.inspect_objlist " \
                   u"where mod_type = 's' and inspect_id = '{2}') as s " \
@@ -612,7 +611,6 @@ class WidgetInspect(QWidget, Ui_Form):
         uri.setDataSource("", sql, "wkb_geometry", "", "id")
         maintain_data = QgsVectorLayer(uri.uri(), u'변화없음', "postgres")
 
-        # TODO: 지오메트리 타입에 따라서 심볼이 달라져야함
         symbol = None
         if maintain_data.wkbType() == QGis.WKBMultiPolygon:
             symbol = QgsFillSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
