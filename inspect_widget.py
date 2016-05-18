@@ -414,12 +414,12 @@ class WidgetInspect(QWidget, Ui_Form):
             cur.execute(sql)
             result = cur.fetchone()
 
-            geom_type = result[0]
+            self.geom_type = result[0]
 
-            if geom_type == 'MULTIPOLYGON': # 폴리곤 일때는 GeoHash 와 면적 생성
+            if self.geom_type == 'MULTIPOLYGON': # 폴리곤 일때는 GeoHash 와 면적 생성
                 self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), ' \
                                    u'12) as mbr_hash_12, round( CAST(st_area(wkb_geometry) as numeric), 1) as geom_area'
-            elif geom_type == 'MULTILINESTRING': # 선 일때는 GeoHash 와 길이 생성
+            elif self.geom_type == 'MULTILINESTRING': # 선 일때는 GeoHash 와 길이 생성
                 self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) ' \
                                    u'as mbr_hash_12, round( CAST(st_length(wkb_geometry) as numeric), 1) as geom_length'
             else: # 점 일때는 GeoHash 만 생성
@@ -432,7 +432,7 @@ class WidgetInspect(QWidget, Ui_Form):
             self.findEditOnlyGeomety()
             # time.sleep(1)
             # 속성만 바뀐 데이터
-            self.findEditAttr(geom_type)
+            self.findEditAttr()
             # time.sleep(1)
             # 삭제된 데이터
             self.findDel()
@@ -455,8 +455,19 @@ class WidgetInspect(QWidget, Ui_Form):
     def findSame(self):
         cur = self.plugin.conn.cursor()
 
-        sql = u"with same_data as ( select o.* from (select {0},{1} from extjob.{2}_view) as o " \
-              u"inner join (select {0},{1} from extjob.{3}_{2}) as e on (o.*) = (e.*) )," \
+        add_sql = ''
+        if self.geom_type == 'MULTIPOLYGON':  # 폴리곤 일때는 면적 비교 추가
+            add_sql = u'and e.geom_area between o.geom_area*0.95 and o.geom_area*1.05'
+        elif self.geom_type == 'MULTILINESTRING':  # 선 일때는 길이 비교 추가
+            add_sql = u'and e.geom_length between o.geom_length*0.95 and o.geom_length*1.05'
+        else:  # 점 일때는 PK 비교 추가
+            add_sql = u'and o.{0} = e.{0}'.format(self.id_column)
+
+        sql = u"with geom_same_data as ( select o.* from (select {0},{1} from extjob.{2}_view) as o " \
+              u"inner join (select {0},{1} from extjob.{3}_{2}) as e " \
+              u"on o.mbr_hash_12 = e.mbr_hash_12 {6} )," \
+              u"same_data as (select o.* from (select {0} from geom_same_data) as o " \
+              u"inner join (select {0} from extjob.{3}_{2}) as e on (o.*) = (e.*))," \
               u"origin as ( select o.ogc_fid as origin_ogc_fid, a.{4} from same_data as a " \
               u"inner join extjob.{2}_view as o on a.{4} = o.{4} )," \
               u"receive as (select o.ogc_fid as receive_ogc_fid, a.{4} from same_data as a " \
@@ -464,7 +475,8 @@ class WidgetInspect(QWidget, Ui_Form):
               u"insert into extjob.inspect_objlist( inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )" \
               u"select '{5}' as inspect_id, '{2}' as layer_nm, origin_ogc_fid, receive_ogc_fid, " \
               u"'s' as mod_type from origin, receive where origin.{4} = receive.{4}"\
-            .format(self.column_sql,self.geohash_sql,self.layer_nm,self.receive_id,self.id_column,self.inspect_id)
+            .format(self.column_sql,self.geohash_sql,self.layer_nm,
+                    self.receive_id,self.id_column,self.inspect_id,add_sql)
         self.sql_rep.write("same_data : " + sql + "\n")
         cur.execute(sql)
 
@@ -489,10 +501,10 @@ class WidgetInspect(QWidget, Ui_Form):
         self.sql_rep.write("edit_geom_data : " + sql + "\n")
         cur.execute(sql)
 
-    def findEditAttr(self,geom_type):
+    def findEditAttr(self):
         cur = self.plugin.conn.cursor()
         # TODO: 타입별로 비교하는 조건이 조금씩 다름
-        if geom_type == 'MULTIPOLYGON':  # 폴리곤 일때는 GeoHash 와 면적 생성
+        if self.geom_type == 'MULTIPOLYGON':  # 폴리곤 일때는 GeoHash 와 면적 생성
             sql = u"with same as (select {0}, {1} from (select origin_ogc_fid from extjob.inspect_objlist " \
                   u"where mod_type = 's' and inspect_id = '{2}') as s " \
                   u"inner join extjob.{3}_view as o on s.origin_ogc_fid = o.ogc_fid), " \
@@ -511,7 +523,7 @@ class WidgetInspect(QWidget, Ui_Form):
                   u"where (origin.mbr_hash_12,origin.geom_area) = (receive.mbr_hash_12,receive.geom_area)" \
                 .format(self.column_sql, self.geohash_sql, self.inspect_id,
                         self.layer_nm, self.receive_id)
-        elif geom_type == 'MULTILINESTRING':  # 선 일때는 GeoHash 와 길이 생성
+        elif self.geom_type == 'MULTILINESTRING':  # 선 일때는 GeoHash 와 길이 생성
             sql = u"with same as (select {0}, {1} from (select origin_ogc_fid from extjob.inspect_objlist " \
                   u"where mod_type = 's' and inspect_id = '{2}') as s " \
                   u"inner join extjob.{3}_view as o on s.origin_ogc_fid = o.ogc_fid), " \
