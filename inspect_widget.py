@@ -417,10 +417,10 @@ class WidgetInspect(QWidget, Ui_Form):
             geom_type = result[0]
 
             if geom_type == 'MULTIPOLYGON': # 폴리곤 일때는 GeoHash 와 면적 생성
-                self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_boundary(wkb_geometry)), 4326), ' \
+                self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), ' \
                                    u'12) as mbr_hash_12, round( CAST(st_area(wkb_geometry) as numeric), 1) as geom_area'
             elif geom_type == 'MULTILINESTRING': # 선 일때는 GeoHash 와 길이 생성
-                self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(wkb_geometry), 4326), 12) ' \
+                self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) ' \
                                    u'as mbr_hash_12, round( CAST(st_length(wkb_geometry) as numeric), 1) as geom_length'
             else: # 점 일때는 GeoHash 만 생성
                 self.geohash_sql = u'st_geohash(ST_Transform(wkb_geometry, 4326), 12) as mbr_hash_12'
