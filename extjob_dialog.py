@@ -92,7 +92,8 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
 
     # 대화상자 닫히는 것은 그냥 이벤트 캐치로 안되고 부모 클래스 함수를 오버라이드 해야 한다.
     def closeEvent(self, evnt):
-        self.hdrClose()
+        # 켰다가 이름쓰고 그냥 닫기만 해도 저장됨 .. 위치 변경 파일 생성가 동등한 위치로 옮김
+        # self.hdrClose()
         super(DlgExtjob, self).closeEvent(evnt)
 
     def fillWorkerList(self):
@@ -124,10 +125,16 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
 
     def hdrClickSelectFile(self):
         # 이미지 파일만 선택할 수 있도록 제한
-        fileFilter = "Image Files (*.jpg *.png *.gif *.tif)"
+        fileFilter = "Image Files (*.jpg *.png *.gif *.tif);;DXF Files (*.dxf)"
         fileName = QFileDialog.getOpenFileName(self.plugin.iface.mainWindow(),
                                                           u'배경 자료를 선택해 주십시오.',"/Users/jsKim-pc/Desktop",fileFilter)
         self.edt_basedata_nm.setText(fileName)
+
+        base_fileName = os.path.basename(fileName)
+        if os.path.splitext(base_fileName)[1] == '.dxf':
+            self.rdo_basetype_map.setChecked(True)
+        else:
+            self.rdo_basetype_photo.setChecked(True)
 
     def getSidoList(self):
         try:
@@ -322,10 +329,9 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
             # 데이터 생산
             self.plugin.generateDataFiles(folderPath)
             self.plugin.clearRb()
+            self.hdrClose()
 
     def hdrClose(self):
-        self.plugin.clearRb()
-
         # TODO: 업체 리스트를 설정파일에 저장하게
         conf = ConfigParser.SafeConfigParser()
         conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
