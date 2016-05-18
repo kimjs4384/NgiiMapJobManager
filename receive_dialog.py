@@ -31,6 +31,7 @@ import time
 from subprocess import check_output
 import sys
 from osgeo import ogr
+import ConfigParser
 
 from ui.receive_dialog_base import Ui_Dialog
 
@@ -85,12 +86,20 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.searchExtjob(workerName, startDate, endDate)
 
     def hdrClickBtnSelectFolder(self):
-        # TODO: 폴더가 기억되게 수정
+        conf = ConfigParser.SafeConfigParser()
+        conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
+
         folderPath = QFileDialog.getExistingDirectory(self.plugin.iface.mainWindow(),
-                                                      u'납품받은 데이터가 있는 폴더를 선택해 주십시오.')
+                                            u'납품받은 데이터가 있는 폴더를 선택해 주십시오.',conf.get('Dir_Info','receive_dir'))
+
         if folderPath:
             self.dataFolder = folderPath
             self.edt_data_folder.setText(folderPath)
+
+            with open(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"), "w") as confFile:
+                conf.set("Dir_Info", "receive_dir", folderPath)
+                conf.write(confFile)
+
 
     def hdrClickBtnUpload(self):
         self.progressBar.show()
@@ -197,7 +206,6 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 QMessageBox.warning(self, u"오류", u"폴더를 선택해 주시기 바랍니다")
                 return False
 
-            # TODO: 기본 칼럼 검사 필요
             if self.checkColumns():
 
                 # 수령ID, 수령 날짜 생성
@@ -229,6 +237,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
                         # 수정된 테이블 생성
                         # TODO: dbf 파일의 인코딩 확인하여 결정하게 해야 함
+
                         command = u'{}ogr2ogr ' \
                                   u'--config SHAPE_ENCODING UTF-8 -append -a_srs EPSG:5179 ' \
                                   u'-f PostgreSQL PG:"host=localhost user=postgres dbname=sdmc password=postgres" ' \
@@ -298,7 +307,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
                 # 기본 칼럼 ( 마스터 디비에 있는 칼럼 ) 가져오기
                 sql = u"select column_name from information_schema.columns " \
-                      u"where table_schema = 'nfsd' and table_name = '{}'".format(layer_nm)
+                      u"where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(layer_nm)
                 cur.execute(sql)
                 results = cur.fetchall()
                 for result in results:
