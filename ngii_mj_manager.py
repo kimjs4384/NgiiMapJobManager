@@ -294,7 +294,6 @@ class NgiiMapJobManager:
             cur.execute(sql, (extjob_id, extjob_nm, timestemp, basedata_nm, basedata_dt, worker_nm, workarea_geom,workarea_txt))
 
             # 데이터 추출 시간
-
             sql = u"select tablename from pg_tables where schemaname = 'nfsd'"
             cur.execute(sql)
             results = cur.fetchall()
@@ -325,6 +324,8 @@ class NgiiMapJobManager:
                     .format(extjob_id, layer_nm, layer_nm, workarea_geom, column_nm)
                 cur.execute(sql)
 
+                self.conn.commit()
+
                 sql = u"SELECT {}.*, '{}' as extjob_id, " \
                       u"'{}' as mapext_dttm, {} as basedata_nm, '{}' as basedata_dt,{} as worker_nm FROM nfsd.{}" \
                       u" WHERE ogc_fid in (SELECT ogc_fid from extjob.extjob_objlist WHERE extjob_id = '{}' " \
@@ -353,7 +354,7 @@ class NgiiMapJobManager:
             # 모든 작업이 정상적일 때만 커밋하게 수정됨
             self.conn.commit()
             # TODO: 모든 레이어가 문제 없을 때만 메시지 보이게 보완
-            QMessageBox.information(self.crrWidget, u"작업 완료", u"작업용 수치지도 생성이 완료되었습니다.")
+            QMessageBox.information(self.dlgExtjob, u"작업 완료", u"작업용 수치지도 생성이 완료되었습니다.")
 
         except Exception as e:
             self.conn.rollback()

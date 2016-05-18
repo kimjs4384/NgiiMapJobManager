@@ -81,6 +81,7 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
 
     def connectFct(self):
         self.cmb_worker_nm.currentIndexChanged.connect(self.hdrCmbWorkerIndexChange)
+        self.cmb_worker_nm.editTextChanged.connect(self.hdrCmbWorkerIndexChange)
         self.btn_selectfile.clicked.connect(self.hdrClickSelectFile)
         self.cmb_sido.currentIndexChanged.connect(self.hdrCmbSidoIndexChange)
         self.cmb_sgg.currentIndexChanged.connect(self.hdrCmbSggIndexChange)
@@ -97,10 +98,20 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
     def fillWorkerList(self):
         # TODO: 설정파일에서 업체 리스트 부르게 수정
         self.cmb_worker_nm.clear()
-        self.cmb_worker_nm.addItem(u'중앙항업')
-        self.cmb_worker_nm.addItem(u'한진항업')
-        self.cmb_worker_nm.addItem(u'범아항업')
-        self.cmb_worker_nm.addItem(u'삼아항업')
+
+        conf = ConfigParser.SafeConfigParser()
+        conf.read(os.path.join('/Users/jsKim-pc/.qgis2/python/plugins/NgiiMapJobManager',
+                               "conf", "NgiiMapJobManager.conf"))
+        names = conf.options('Worker_nm')
+
+        for name in names:
+            worker_nm = conf.get('Worker_nm', name)
+            self.cmb_worker_nm.addItem(worker_nm.decode('utf-8'))
+
+        # self.cmb_worker_nm.addItem(u'중앙항업')
+        # self.cmb_worker_nm.addItem(u'한진항업')
+        # self.cmb_worker_nm.addItem(u'범아항업')
+        # self.cmb_worker_nm.addItem(u'삼아항업')
         self.cmb_worker_nm.setCurrentIndex(-1)
 
     def hdrCmbWorkerIndexChange(self):
@@ -266,7 +277,6 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         assert(table)
 
         # 선택된 영역 리스트에 넣는다.
-        # TODO: 이미 있으면 안 들어가게 (수정_JS)
         areaItems = self.lst_workarea.findItems(name,Qt.MatchExactly)
         if len(areaItems) == 0:
             self.lst_workarea.addItem(name)
@@ -295,8 +305,6 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
             return
 
         # 데이터 폴더 선택
-        # TODO: 이전에 선택했던 폴더 기억하게 ( conf 파일에 저장_JS )
-
         conf = ConfigParser.SafeConfigParser()
         conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
 
@@ -317,4 +325,13 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
 
     def hdrClose(self):
         self.plugin.clearRb()
+
         # TODO: 업체 리스트를 설정파일에 저장하게
+        conf = ConfigParser.SafeConfigParser()
+        conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
+
+        worker_nm = self.cmb_worker_nm.currentText()
+
+        with open(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"), "w") as confFile:
+            conf.set("Worker_nm", worker_nm.encode('utf-8'), worker_nm.encode('utf-8'))
+            conf.write(confFile)
