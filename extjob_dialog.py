@@ -101,12 +101,13 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         self.cmb_worker_nm.clear()
 
         conf = ConfigParser.SafeConfigParser()
-        conf.encoding = 'utf-8'
-        conf.read(os.path.join(os.path.dirname(__file__),"conf", "NgiiMapJobManager.conf"))
-        names = conf.get('Worker_nm','worker_list')
+        conf.read(os.path.join('/Users/jsKim-pc/.qgis2/python/plugins/NgiiMapJobManager',
+                               "conf", "NgiiMapJobManager.conf"))
+        names = conf.options('Worker_nm')
 
-        for name in eval(names):
-            self.cmb_worker_nm.addItem(name)
+        for name in names:
+            worker_nm = conf.get('Worker_nm', name)
+            self.cmb_worker_nm.addItem(worker_nm.decode('utf-8'))
 
         # self.cmb_worker_nm.addItem(u'중앙항업')
         # self.cmb_worker_nm.addItem(u'한진항업')
@@ -333,19 +334,10 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
     def hdrClose(self):
         # TODO: 업체 리스트를 설정파일에 저장하게
         conf = ConfigParser.SafeConfigParser()
-        conf.encoding = 'utf-8'
         conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
-        names = conf.get('Worker_nm', 'worker_list')
 
-        new_names = eval(names)
         worker_nm = self.cmb_worker_nm.currentText()
 
-        if worker_nm in new_names:
-            return
-        else:
-            new_names.append(worker_nm)
-            new_names.sort()
-
         with open(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"), "w") as confFile:
-            conf.set("Worker_nm", "worker_list", str(new_names))
+            conf.set("Worker_nm", worker_nm.encode('utf-8'), worker_nm.encode('utf-8'))
             conf.write(confFile)
