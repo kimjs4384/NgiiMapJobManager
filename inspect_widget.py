@@ -29,9 +29,6 @@ from PyQt4.QtCore import *
 import psycopg2
 import time
 import ConfigParser
-#from docx import Document
-#from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-from xml.etree.cElementTree import XML
 import zipfile
 
 from qgis.core import *
@@ -171,6 +168,11 @@ class WidgetInspect(QWidget, Ui_Form):
             for result in results:
                 self.cmb_receive_id.addItem(result[0])
 
+            sql = u"select workarea_txt from extjob.extjob_main where extjob_id = '{}'".format(sel_extjob_id)
+            cur.execute(sql)
+            result = cur.fetchone()
+            self.workarea_txt = result[0]
+
             # for result in results:
             #     self.cmb_layer_nm.addItem(result[2])
 
@@ -183,10 +185,12 @@ class WidgetInspect(QWidget, Ui_Form):
     def addLayerList(self):
         self.cmb_layer_nm.clear()
 
+        self.receive_id = self.cmb_receive_id.currentText()
+
         cur = self.plugin.conn.cursor()
         sel_extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
-        sql = u"select layer_nm from extjob.receive_main where extjob_id = '{}' and " \
-              u"receive_id = '{}'".format(sel_extjob_id, self.cmb_receive_id.currentText())
+        sql = u"select layer_nm, receive_dttm from extjob.receive_main where extjob_id = '{}' and " \
+              u"receive_id = '{}'".format(sel_extjob_id, self.receive_id)
 
         cur.execute(sql)
         results = cur.fetchall()
@@ -194,6 +198,7 @@ class WidgetInspect(QWidget, Ui_Form):
         self.cmb_layer_nm.addItem('')
         for result in results:
             self.cmb_layer_nm.addItem(result[0])
+            self.receive_dttm = result[1]
 
     def hdrClickBtnStartInspect(self):
         if self.cmb_layer_nm.currentText() == "":
@@ -681,7 +686,7 @@ class WidgetInspect(QWidget, Ui_Form):
         cur.execute(sql)
         result = cur.fetchone()
         self.inspect_id = result[0]
-        inspect_dttm = result[1]
+        self.inspect_dttm = result[1]
 
         self.receive_id =  self.cmb_receive_id.currentText()
         self.extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
@@ -694,7 +699,7 @@ class WidgetInspect(QWidget, Ui_Form):
         # cur.execute(sql)
         sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm) " \
               u"VALUES (%s, %s, %s, %s, %s)"
-        cur.execute(sql, (self.inspect_id, self.extjob_id, self.receive_id, inspect_dttm, self.inspecter))
+        cur.execute(sql, (self.inspect_id, self.extjob_id, self.receive_id, self.inspect_dttm, self.inspecter))
 
         self.plugin.conn.commit()
 
@@ -723,6 +728,12 @@ class WidgetInspect(QWidget, Ui_Form):
             diff_count['ef'],
             diff_count['s'] )
 
+        self.num_add = diff_count['a']
+        self.num_remove = diff_count['r']
+        self.num_edit_geom = diff_count['eg']
+        self.num_edit_attr = diff_count['ef']
+        self.num_stay = diff_count['s']
+
         QMessageBox.information(self, u"탐지결과", info)
 
         self.lbl_progress.setText(info)
@@ -737,27 +748,12 @@ class WidgetInspect(QWidget, Ui_Form):
                 return
 
         # 결과 탐지 수행
-        numAdd = 0
-        numRemove = 0
-        numEditGeom = 0
-        numEditAttr = 0
         numAccept = 0
         numReject = 0
         numMiss = 0
-        rejectObjList = []
         for obj in self.inspectList:
             # 변경탐지 결과 요약
-            mod_type = obj['mod_type']
             insp_res = obj['inspect_res']
-
-            if mod_type == "a":
-                numAdd += 1
-            elif mod_type == "r":
-                numRemove += 1
-            elif mod_type == "eg":
-                numEditGeom += 1
-            elif mod_type == "ef":
-                numEditAttr += 1
 
             # 검수결과 요약 (승인, 거부, 미검수)
             if insp_res == "accept":
@@ -767,38 +763,107 @@ class WidgetInspect(QWidget, Ui_Form):
             else:
                 numMiss += 1
 
-    #     # 문서 생성
-    #     document = Document()
-    #     document.add_heading(u'납품 데이터 검수 결과', 0)
-    #     p = document.add_paragraph(u'검수일: {}\n검수자: {}'.format('2015-05-16', self.edt_inpector.text()))
-    #     p.add_run('bold').bold = True
-    #     p.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
-    #
-    #     document.add_heading(u'변경탐지 결과 요약', 1)
-    #     document.add_paragraph(
-    #         u'추가된 객체: {} 개'.format(numAdd), style='ListBullet'
-    #     )
-    #     document.add_paragraph(
-    #         u'삭제된 객체: {} 개'.format(numRemove), style='ListBullet'
-    #     )
-    #     document.add_paragraph(
-    #         u'도형변경 객체: {} 개'.format(numEditGeom), style='ListBullet'
-    #     )
-    #     document.add_paragraph(
-    #         u'속성변경 객체: {} 개'.format(numEditAttr), style='ListBullet'
-    #     )
-    #
-    #     document.add_heading(u'검수 결과 요약', 1)
-    #     document.add_paragraph(
-    #         u'승인된 객체: {} 개'.format(numAccept), style='ListBullet'
-    #     )
-    #     document.add_paragraph(
-    #         u'거부된 객체: {} 개'.format(numReject), style='ListBullet'
-    #     )
-    #     document.add_paragraph(
-    #         u'미검수 객체: {} 개'.format(numMiss), style='ListBullet'
-    #     )
-    #
+        # WORD 문서 생성
+        extjob_nm = self.cmb_extjob_nm.currentText()
+        extjob_id = self.extjob_id
+        inspector_name = self.edt_inpector.text()
+        layer_nm = self.cmb_layer_nm.currentText()
+        worker_nm = self.cmb_worker_nm.currentText()
+        order_dt = self.date_mapext_dttm.date().toString(u'yyyy년 M월 d일')
+        basedata_dt = self.date_basedata_dt.date().toString(u'yyyy년 M월 d일')
+        area_list = self.workarea_txt
+        receive_dt = self.receive_dttm.strftime(u'%y년 %m월 %d일'.encode('UTF-8')).decode('UTF-8')
+        receive_id = self.receive_id
+        num_add = self.num_add
+        num_remove = self.num_remove
+        num_edit_geom = self.num_edit_geom
+        num_edit_attr = self.num_edit_attr
+        num_stay = self.num_stay
+        inspect_dt = self.inspect_dttm.strftime(u'%y년 %m월 %d일'.encode('UTF-8')).decode('UTF-8')
+        num_accept = numAccept
+        num_reject = numReject
+        num_miss = numMiss
+        final_result = u"검수통과" if (num_reject<=0 and num_miss<=0) else u"보완후 재검수"
+        fileFilter = "MS Word Files (*.docx)"
+        crrTime = time.localtime()
+        defFileName = u"/temp/{}_{}.docx".format(extjob_nm, time.strftime("%Y%m%d", crrTime))
+        fileName = QFileDialog.getSaveFileName(self.plugin.iface.mainWindow(),
+            u'레포트 파일명을 입력해 주세요.', defFileName, fileFilter)
+        if not fileName:
+            return
+
+        try:
+            os.chdir(os.path.join(self.plugin.plugin_dir, u"report_template"))
+            with zipfile.ZipFile(fileName, 'w') as zf:
+                # 고정 파일들
+                zf.write("[Content_Types].xml")
+                zf.write("_rels/.rels")
+                zf.write("customXml/item1.xml")
+                zf.write("customXml/item2.xml")
+                zf.write("customXml/item3.xml")
+                zf.write("customXml/itemProps1.xml")
+                zf.write("customXml/itemProps2.xml")
+                zf.write("customXml/itemProps3.xml")
+                zf.write("customXml/_rels/item1.xml.rels")
+                zf.write("customXml/_rels/item2.xml.rels")
+                zf.write("customXml/_rels/item3.xml.rels")
+                zf.write("docProps/app.xml")
+                zf.write("docProps/core.xml")
+                zf.write("docProps/custom.xml")
+                zf.write("word/endnotes.xml")
+                zf.write("word/fontTable.xml")
+                zf.write("word/footnotes.xml")
+                zf.write("word/header1.xml")
+                zf.write("word/header2.xml")
+                zf.write("word/numbering.xml")
+                zf.write("word/settings.xml")
+                zf.write("word/styles.xml")
+                zf.write("word/webSettings.xml")
+                zf.write("word/_rels/settings.xml.rels")
+                zf.write("word/glossary/document.xml")
+                zf.write("word/glossary/fontTable.xml")
+                zf.write("word/glossary/numbering.xml")
+                zf.write("word/glossary/settings.xml")
+                zf.write("word/glossary/styles.xml")
+                zf.write("word/glossary/webSettings.xml")
+                zf.write("word/glossary/_rels/document.xml.rels")
+                zf.write("word/theme/theme1.xml")
+
+                # 변경되는 파일들
+                word_document = u''
+                with open("word/document.xml.tmpl", "r") as f:
+                    data = f.read()
+                    word_document = data.decode('UTF-8')
+                word_document = word_document.replace(u'<!--{{extjob_nm}}-->', extjob_nm)
+                word_document = word_document.replace(u'<!--{{extjob_id}}-->', extjob_id)
+                word_document = word_document.replace(u'<!--{{inspector_name}}-->', inspector_name)
+                word_document = word_document.replace(u'<!--{{layer_nm}}-->', layer_nm)
+                word_document = word_document.replace(u'<!--{{worker_nm}}-->', worker_nm)
+                word_document = word_document.replace(u'<!--{{order_dt}}-->', order_dt)
+                word_document = word_document.replace(u'<!--{{basedata_dt}}-->', basedata_dt)
+                word_document = word_document.replace(u'<!--{{area_list}}-->', area_list)
+                word_document = word_document.replace(u'<!--{{receive_dt}}-->', receive_dt)
+                word_document = word_document.replace(u'<!--{{receive_id}}-->', receive_id)
+                word_document = word_document.replace(u'<!--{{num_add}}-->', str(num_add))
+                word_document = word_document.replace(u'<!--{{num_remove}}-->', str(num_remove))
+                word_document = word_document.replace(u'<!--{{num_edit_geom}}-->', str(num_edit_geom))
+                word_document = word_document.replace(u'<!--{{num_edit_attr}}-->', str(num_edit_attr))
+                word_document = word_document.replace(u'<!--{{num_stay}}-->', str(num_stay))
+                word_document = word_document.replace(u'<!--{{inspect_dt}}-->', inspect_dt)
+                word_document = word_document.replace(u'<!--{{num_accept}}-->', str(num_accept))
+                word_document = word_document.replace(u'<!--{{num_reject}}-->', str(num_reject))
+                word_document = word_document.replace(u'<!--{{num_miss}}-->', str(num_miss))
+                word_document = word_document.replace(u'<!--{{final_result}}-->', final_result)
+                with open("word/document.xml", "w") as f:
+                    f.write(word_document.encode('UTF-8'))
+                zf.write("word/document.xml")
+                zf.write("word/_rels/document.xml.rels")
+                zf.write("word/media/image1.png")
+                zf.write("word/media/image2.png")
+
+            QMessageBox.information(self, u"작업완료", u"검수 레포트 작성이 완료되었습니다.")
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", u"레포트 작성중 오류가 발생하였습니다.\n{}".format(e))
     #     document.add_heading(u'검수 결과 상세', 1)
     #     for obj in rejectObjList:
     #         # 객체 스냅샷
@@ -815,9 +880,3 @@ class WidgetInspect(QWidget, Ui_Form):
     #             row_cells[1].text = obj[key]
     #
     #     document.save('demo.docx')
-
-        # WORD_NAMESPACE = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
-        # PARA = WORD_NAMESPACE + 'p'
-        # TEXT = WORD_NAMESPACE + 't'
-        #
-        # document = zipfile.ZipFile("c:\\Temp\\TestResult.docx")
