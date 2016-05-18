@@ -346,10 +346,13 @@ class NgiiMapJobManager:
 
                 command = u'{}ogr2ogr ' \
                           u' --config SHAPE_ENCODING UTF-8 -f "ESRI Shapefile" {}.shp ' \
-                          u'-t_srs EPSG:5179 PG:"host={} user={} dbname={} password={}" ' \
-                          u'-sql "{}"'.format(ogr2ogrPath, shapeFileName, self.ip_address, self.account, self.database, self.password, sql)
+                          u'-t_srs EPSG:5179 PG:"host={} user={} dbname={} password={}" -sql "{}"'\
+                    .format(ogr2ogrPath, shapeFileName, self.ip_address,
+                            self.account, self.database, self.password, sql)
                 rc = check_output(command.decode(), shell=True)
-                # TODO: 각 파일에 해당하는 *.cpg 파일이 생성되게 보완
+
+                with open(os.path.join(folderPath, '{}.cpg'.format(layer_nm)), "w") as confFile:
+                    confFile.write('UTF-8')
 
             # 모든 작업이 정상적일 때만 커밋하게 수정됨
             self.conn.commit()
