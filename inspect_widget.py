@@ -405,6 +405,7 @@ class WidgetInspect(QWidget, Ui_Form):
             column_nm.remove('wkb_geometry')
 
             self.column_sql = ','.join(column_nm)
+            # TODO: 첫번째 칼럼이 ID라는 보장...
             self.id_column = column_nm[0]
 
             # TODO: geometry 타입에 따라서 GeoHash 알고리즘을 바꿔야함
@@ -419,7 +420,7 @@ class WidgetInspect(QWidget, Ui_Form):
                 self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_boundary(wkb_geometry)), 4326), ' \
                                    u'12) as mbr_hash_12, round( CAST(st_area(wkb_geometry) as numeric), 1) as geom_area'
             elif geom_type == 'MULTILINESTRING': # 선 일때는 GeoHash 와 길이 생성
-                self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(st_boundary(wkb_geometry)), 4326), 12) ' \
+                self.geohash_sql = u'st_geohash(ST_Transform(st_centroid(wkb_geometry), 4326), 12) ' \
                                    u'as mbr_hash_12, round( CAST(st_length(wkb_geometry) as numeric), 1) as geom_length'
             else: # 점 일때는 GeoHash 만 생성
                 self.geohash_sql = u'st_geohash(ST_Transform(wkb_geometry, 4326), 12) as mbr_hash_12'
