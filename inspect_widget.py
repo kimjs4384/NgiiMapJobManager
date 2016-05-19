@@ -64,7 +64,7 @@ class WidgetInspect(QWidget, Ui_Form):
         self.setInitValue()
         self.connectFct()
 
-        if self.plugin.dlgReceive != None:
+        if self.plugin.dlgReceive != None and self.plugin.dlgReceive.isVisible():
             extjob_id = self.plugin.dlgReceive.cmb_extjob_nm.itemData(self.plugin.dlgReceive.cmb_extjob_nm.currentIndex())
             if extjob_id != None and extjob_id != "":
                 self.setDefaultInfo(extjob_id)
@@ -630,13 +630,13 @@ class WidgetInspect(QWidget, Ui_Form):
 
         symbol = None
         if maintain_data.wkbType() == QGis.WKBMultiPolygon:
-            symbol = QgsFillSymbolV2().createSimple({'color_border': 'black', 'width_border': '0.25',
+            symbol = QgsFillSymbolV2().createSimple({'color_border': 'gray', 'width_border': '0.5',
                                                      'style': 'no', 'style_border': 'solid'})
         elif maintain_data.wkbType() == QGis.WKBMultiLineString:
-            symbol = QgsLineSymbolV2().createSimple({'color': 'black', 'width': '0.25',
+            symbol = QgsLineSymbolV2().createSimple({'color': 'gray', 'width': '0.5',
                                                      'style': 'solid'})
         else:
-            symbol = QgsMarkerSymbolV2.createSimple({'name': 'circle', 'color': 'black', 'width': '1.5',
+            symbol = QgsMarkerSymbolV2.createSimple({'name': 'circle', 'color': 'gray', 'size': '2',
                                                      'outline_style': 'no'})
 
         maintain_data.rendererV2().setSymbol(symbol)
@@ -668,13 +668,13 @@ class WidgetInspect(QWidget, Ui_Form):
         categories = []
         for mod_type, (color, label) in mod_type_symbol.items():
             if diff_data_type == QGis.WKBMultiPolygon:
-                symbol = QgsFillSymbolV2().createSimple({'color_border': color, 'width_border': '0.25',
+                symbol = QgsFillSymbolV2().createSimple({'color_border': color, 'width_border': '1',
                                                       'style': 'no', 'style_border': 'solid'})
             elif diff_data_type == QGis.WKBMultiLineString:
-                symbol = QgsLineSymbolV2().createSimple({'color': color, 'width': '0.25',
+                symbol = QgsLineSymbolV2().createSimple({'color': color, 'width': '1',
                                                          'style': 'solid'})
             else:
-                symbol = QgsMarkerSymbolV2.createSimple({'name': 'circle', 'color': color , 'width': '1.5',
+                symbol = QgsMarkerSymbolV2.createSimple({'name': 'circle', 'color': color , 'size': '4',
                                                          'outline_style': 'no'})
             category = QgsRendererCategoryV2(mod_type, symbol, label)
             categories.append(category)
