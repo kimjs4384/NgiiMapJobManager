@@ -106,7 +106,8 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.lbl_progress.show()
 
         # 수령 데이터 import
-        if self.importRecData():
+        receive_id = self.importRecData()
+        if  receive_id != None and receive_id != '':
             # TODO: 시연을 위한 코드이므로 제거 필요
             for i in range(10):
                 progress = i * 10
@@ -115,8 +116,10 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 time.sleep(1)
             self.btn_upload.setDisabled(True)
             self.btn_inspect.setDisabled(False)
-            # TODO: 수령 ID 보여주는 로직 추가
-            QMessageBox.information(self, u"작업완료", u"납품 데이터 올리기가 완료되었습니다.")
+
+            msg = u'납품 데이터 올리기가 완료되었습니다.\n' \
+                  u'수령 ID : {}'.format(receive_id)
+            QMessageBox.information(self, u"작업완료", msg)
 
         self.progressBar.hide()
         self.lbl_progress.hide()
@@ -200,11 +203,11 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
             extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
             if extjob_id == "":
                 QMessageBox.warning(self, u"오류", u"적절한 작업명이 선택되지 않았습니다.")
-                return False
+                return
 
             if self.edt_data_folder.text() == "":
                 QMessageBox.warning(self, u"오류", u"폴더를 선택해 주시기 바랍니다")
-                return False
+                return
 
             if self.checkColumns():
 
@@ -215,7 +218,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 result = cur.fetchone()
                 if not result:
                     QMessageBox.error(self, u"오류", u"선택한 작업에 해당되는 데이터를 찾지 못했습니다. 관리자에게 문의해 주세요.")
-                    return False
+                    return
                 receive_id = result[0]
                 receive_dttm = result[1]
 
@@ -233,7 +236,16 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                         else:
                             ogr2ogrPath = "/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/"
 
-                        # TODO: 만들려는 테이블이 이미 있는지 확인하여 있으면 확 지워버림
+                        # 만들려는 테이블이 이미 있는지 확인하여 있으면 확 지워버림
+                        sql = u"SELECT count(table_name) FROM information_schema.tables " \
+                              u"WHERE table_schema='extjob' and table_name = '{}'".format(table_nm)
+                        cur.execute(sql)
+                        res = cur.fetchone()
+
+                        if res[0] > 0:
+                            sql = "drop table extjob.{} ".format(table_nm)
+                            cur.execute(sql)
+                            self.plugin.conn.commit()
 
                         # 수정된 테이블 생성
                         # TODO: dbf 파일의 인코딩 확인하여 결정하게 해야 함
@@ -283,16 +295,16 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
                 self.conn.commit()
 
-                return True
+                return receive_id
             else:
-                return False
+                return
 
         except Exception as e:
             # TODO: 에러 발생시 테이블 삭제하고 진행을 멈춤
             self.conn.rollback()
             QMessageBox.warning(self, u"오류", str(e))
 
-            return False
+            return
 
     def checkColumns(self):
         cur = self.plugin.conn.cursor()
