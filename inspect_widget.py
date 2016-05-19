@@ -303,12 +303,20 @@ class WidgetInspect(QWidget, Ui_Form):
         bound = geom.boundingBox()
         canvas = self.plugin.iface.mapCanvas()
         canvas.setExtent(bound)
+        canvas.zoomOut()
         canvas.refresh()
 
     def hdrClickBtnAccept(self):
         # 초기화 되지 않으면 동작 안되게
         if self.crrIndex < 0:
             return
+
+        if self.edt_reject_reason.toPlainText() != "":
+            rc = QMessageBox.question(self, u"주의", u"거부사유가 입력되어 있습니다.\n"
+                                              u"정말 승인하시겠습니까?"
+                                 , QMessageBox.Yes, QMessageBox.No)
+            if rc != QMessageBox.Yes:
+                return
 
         crrFeature = self.inspectList[self.crrIndex]
         origin_ogc_fid = crrFeature['origin_ogc_fid']
@@ -373,6 +381,12 @@ class WidgetInspect(QWidget, Ui_Form):
 
         self.plugin.conn.commit()
 
+        # 거부시 화면 저장
+        obj_id = crrFeature['id']
+        image_path = os.path.join(self.plugin.plugin_dir, u"report_template", "word/media/image{}.png".format(100 + obj_id))
+        canvas = self.plugin.iface.mapCanvas()
+        canvas.saveAsImage(image_path)
+
         self.edt_reject_reason.setPlainText("")
         self.numProcessed += 1
         self.iterCurrentObj()
@@ -431,16 +445,12 @@ class WidgetInspect(QWidget, Ui_Form):
 
             # 속성, 지오메트리 까지 같은 데이터
             self.findSame()
-            # time.sleep(1)
             # 속성은 같고 지오메트리만 바뀐 데이터
             self.findEditOnlyGeomety()
-            # time.sleep(1)
             # 속성만 바뀐 데이터
             self.findEditAttr()
-            # time.sleep(1)
             # 삭제된 데이터
             self.findDel()
-            # time.sleep(1)
             # 추가된 데이터
             self.findAdd()
 
@@ -746,7 +756,7 @@ class WidgetInspect(QWidget, Ui_Form):
 
         QMessageBox.information(self, u"탐지결과", info)
 
-        self.lbl_progress.setText(info)
+        # self.lbl_progress.setText(info)
 
     # http://etienned.github.io/posts/extract-text-from-word-docx-simply/
     def hdrClickBtnMakeReport(self):
@@ -782,20 +792,21 @@ class WidgetInspect(QWidget, Ui_Form):
         order_dt = self.date_mapext_dttm.date().toString(u'yyyy년 M월 d일')
         basedata_dt = self.date_basedata_dt.date().toString(u'yyyy년 M월 d일')
         area_list = self.workarea_txt
-        receive_dt = self.receive_dttm.strftime(u'%y년 %m월 %d일'.encode('UTF-8')).decode('UTF-8')
+        receive_dt = self.receive_dttm.strftime(u'%Y년 %m월 %d일'.encode('UTF-8')).decode('UTF-8')
         receive_id = self.receive_id
         num_add = self.num_add
         num_remove = self.num_remove
         num_edit_geom = self.num_edit_geom
         num_edit_attr = self.num_edit_attr
         num_stay = self.num_stay
-        inspect_dt = self.inspect_dttm.strftime(u'%y년 %m월 %d일'.encode('UTF-8')).decode('UTF-8')
+        inspect_dt = self.inspect_dttm.strftime(u'%Y년 %m월 %d일'.encode('UTF-8')).decode('UTF-8')
         num_accept = numAccept
         num_reject = numReject
         num_miss = numMiss
         final_result = u"검수통과" if (num_reject<=0 and num_miss<=0) else u"보완후 재검수"
         fileFilter = "MS Word Files (*.docx)"
         crrTime = time.localtime()
+        # TODO: 레포트 경로 저장되게 수정
         defFileName = u"/temp/{}_{}.docx".format(extjob_nm, time.strftime("%Y%m%d", crrTime))
         fileName = QFileDialog.getSaveFileName(self.plugin.iface.mainWindow(),
             u'레포트 파일명을 입력해 주세요.', defFileName, fileFilter)
@@ -839,7 +850,7 @@ class WidgetInspect(QWidget, Ui_Form):
                 zf.write("word/glossary/_rels/document.xml.rels")
                 zf.write("word/theme/theme1.xml")
 
-                # 변경되는 파일들
+                # 주 문서부분
                 word_document = u''
                 with open("word/document.xml.tmpl", "r") as f:
                     data = f.read()
@@ -864,29 +875,73 @@ class WidgetInspect(QWidget, Ui_Form):
                 word_document = word_document.replace(u'<!--{{num_reject}}-->', str(num_reject))
                 word_document = word_document.replace(u'<!--{{num_miss}}-->', str(num_miss))
                 word_document = word_document.replace(u'<!--{{final_result}}-->', final_result)
+
+                # 거부 객체 리포트
+                img_id_list = []
+                i_rg_start = word_document.find('<!--%start for rejects%-->')
+                i_rg_end = word_document.find('<!--%end for rejects%-->', i_rg_start) + len('<!--%end for rejects%-->')
+
+                if num_reject <= 0:  # 거부된 객체가 없는 경우
+                    message = u'<w:p w:rsidR="00361A42" w:rsidRDefault="00D92755" w:rsidP="008A6D62"><w:pPr><w:pStyle w:val="20"/><w:rPr><w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕" w:cstheme="minorBidi"/><w:sz w:val="18"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕"/><w:sz w:val="22"/></w:rPr><w:t>거부된 객체가 없습니다.</w:t></w:r></w:p>'
+                    word_document = word_document[:i_rg_start-1] + message + word_document[i_rg_end+1:]
+                else: # 거부된 객체가 있는 경우
+                    reject_rpt_tmpl = word_document[i_rg_start:i_rg_end]
+                    i_row_start = reject_rpt_tmpl.find('<!--%start for row%-->')
+                    i_row_end = reject_rpt_tmpl.find('<!--%end for row%-->', i_row_start) + len('<!--%end for row%-->')
+                    table_row_tmpl = reject_rpt_tmpl[i_row_start:i_row_end]
+
+                    obj_no = 0
+                    detail_doc = u''
+                    for obj in self.inspectList:
+                        insp_res = obj['inspect_res']
+                        if insp_res  == "reject":
+                            obj_no += 1
+                            img_id = obj['id']
+                            detail_doc +=  reject_rpt_tmpl[:i_row_start-1]
+
+                            # 객체의 속성과 값을 기록
+                            for field in obj.fields():
+                                key = field.name()
+                                val = obj[key]
+                                temp = table_row_tmpl.replace("<!--{{key}}-->", key)
+                                temp = temp.replace("<!--{{value}}-->", unicode(val))
+                                detail_doc += temp
+
+                            detail_doc +=  reject_rpt_tmpl[i_row_end+1:]
+
+                            detail_doc = detail_doc.replace("<!--{{reject_index}-->", str(obj_no))
+                            detail_doc = detail_doc.replace("<!--{{reject_region}}-->", obj['reject_reason'])
+                            detail_doc = detail_doc.replace("<!--{{image_id}}-->", str(100+img_id))
+                            img_id_list.append(img_id)
+
+                    word_document = word_document[:i_rg_start - 1] + detail_doc + word_document[i_rg_end + 1:]
+
+                # 기록하고 압축파일에 포함
                 with open("word/document.xml", "w") as f:
                     f.write(word_document.encode('UTF-8'))
                 zf.write("word/document.xml")
+
+                # Resource List
+                rels_doc = u""
+                with open("word/_rels/document.xml.rels.tmpl", "r") as f:
+                    data = f.read()
+                    rels_tmpl = data.decode('UTF-8')
+                    i_start = rels_tmpl.find('<!--%start for images%-->')
+                    i_end = rels_tmpl.find('<!--%end for images%-->', i_start) + len('<!--%end for images%-->')
+
+                    rels_doc = rels_tmpl[:i_start-1]
+                    if num_reject > 0:  # 거부된 객체가 있는 경우
+                        image_rel_tmpl = rels_tmpl[i_start:i_end]
+                        for img_id in img_id_list:
+                            image_name = "word/media/image{}.png".format(100 + img_id)
+                            zf.write(image_name)
+                            rels_doc += image_rel_tmpl.replace('<!--{{image_id}}-->', str(img_id+100))
+                    rels_doc += rels_tmpl[i_end+1:]
+
+                with open("word/_rels/document.xml.rels", "w") as f:
+                    f.write(rels_doc.encode('UTF-8'))
                 zf.write("word/_rels/document.xml.rels")
-                zf.write("word/media/image1.png")
-                zf.write("word/media/image2.png")
 
             QMessageBox.information(self, u"작업완료", u"검수 레포트 작성이 완료되었습니다.")
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"레포트 작성중 오류가 발생하였습니다.\n{}".format(e))
-    #     document.add_heading(u'검수 결과 상세', 1)
-    #     for obj in rejectObjList:
-    #         # 객체 스냅샷
-    #         # document.add_picture('monty-truth.png', width=Cm(5))
-    #
-    #         # 객체 속성
-    #         table = document.add_table(rows=1, cols=3)
-    #         hdr_cells = table.rows[0].cells
-    #         hdr_cells[0].text = u'속성'
-    #         hdr_cells[1].text = u'값'
-    #         for key in obj.keys():
-    #             row_cells = table.add_row().cells
-    #             row_cells[0].text = key
-    #             row_cells[1].text = obj[key]
-    #
-    #     document.save('demo.docx')
