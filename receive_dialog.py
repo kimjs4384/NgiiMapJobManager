@@ -201,6 +201,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         try:
             # 선택된 extjob_id 확보
             extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
+
             if extjob_id == "":
                 QMessageBox.warning(self, u"오류", u"적절한 작업명이 선택되지 않았습니다.")
                 return
@@ -227,7 +228,70 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     if os.path.splitext(fileName)[1]=='.shp':
                         layer_nm = os.path.splitext(fileName)[0]
                         table_nm = receive_id + "_" + layer_nm
+                        shp_path = os.path.join(self.edt_data_folder.text(),fileName)
 
+                        # TODO: 파일 내에 여러 extjob_id 가 있는 경우 대비하여 코딩 수정 필요
+                        # 파일과 선택한 extjob_id 일치여부
+                        extjob_id_list = []
+                        check_extjob_id = True
+
+                        ogr_drive = ogr.GetDriverByName('ESRI Shapefile')
+                        shp_file = ogr_drive.Open(shp_path)
+
+                        shp_layer = shp_file.GetLayer()
+                        shp_layer_def = shp_layer.GetLayerDefn()
+
+                        shp_fields = []
+                        for i in range(shp_layer_def.GetFieldCount()):
+                            shp_fields.append(shp_layer_def.GetFieldDefn(i).GetName())
+
+
+                        # extjob_id field를 가지고 있는 경우에만 실행
+                        if 'extjob_id' in shp_fields:
+                            # NULL 값은 필터링
+                            shp_data = shp_file.ExecuteSQL(
+                                        'select DISTINCT extjob_id from {} where extjob_id is not NULL'.format(layer_nm))
+
+                            for row in shp_data:
+                                extjob_id_list.append(row.GetField('extjob_id'))
+
+                        # extjob_id 값의 수에 따라서 분류류
+                        if len(extjob_id_list) == 0: # extjob_id 가 없는 경우
+                            rc = QMessageBox.question(self,u'경고',u'{} 파일에 외주ID가 존재하지 않습니다.\n'
+                                                           u'선택한 외주ID({})로 계속 하시겠습니까?'
+                                                            .format(layer_nm,extjob_id),QMessageBox.Yes, QMessageBox.No)
+                            if rc != QMessageBox.Yes:
+                                continue  # 다음 레이어 처리로
+
+                            check_extjob_id = False
+
+                        elif len(extjob_id_list) == 1: # extjob_id 가 하나만 존재하는 경우
+                            file_extjob_id = extjob_id_list[0]
+
+                            # 사용자가 선택한 extjob_id와 파일의 그것이 다를 때 대응
+                            if extjob_id != file_extjob_id:
+
+                                rc = QMessageBox.question(self, u"경고",
+                                                          u"{} 파일의 외주ID({})가 선택한 작업의 외주ID({})와 다릅니다.\n"
+                                                          u"그래도 계속 하시겠습니까?".format(layer_nm,file_extjob_id,
+                                                          extjob_id),QMessageBox.Yes, QMessageBox.No)
+                                if rc != QMessageBox.Yes:
+                                    continue  # 다음 레이어 처리로
+
+                                check_extjob_id = False
+
+                        else: # extjob_id 가 여러 개인 경우
+                            extjob_id_str = ','.join(extjob_id_list)
+                            rc = QMessageBox.question(self, u"경고",
+                                                      u"{} 파일에 여러 외주ID가 존재합니다.\n"
+                                                      u"외주ID : {}\n"
+                                                      u"선택한 외주ID : {}\n"
+                                                      u"그래도 계속 하시겠습니까?".format(layer_nm, extjob_id_str,
+                                                       extjob_id), QMessageBox.Yes, QMessageBox.No)
+                            if rc != QMessageBox.Yes:
+                                continue  # 다음 레이어 처리로
+
+                            check_extjob_id = False
 
                         # 윈도우가 아닌 경우 PATH 추가
                         ogr2ogrPath = None
@@ -254,7 +318,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                                   u'--config SHAPE_ENCODING UTF-8 -append -a_srs EPSG:5179 ' \
                                   u'-f PostgreSQL PG:"host=localhost user=postgres dbname=sdmc password=postgres" ' \
                                   u'{} -nln extjob.{} -nlt PROMOTE_TO_MULTI '\
-                                  .format(ogr2ogrPath, os.path.join(self.edt_data_folder.text(),fileName),table_nm)
+                                  .format(ogr2ogrPath, shp_path, table_nm)
                         rc = check_output(command.encode(), shell=True)
 
                         sql = u"alter table extjob.{0}_{1} rename basedata_n to basedata_nm; " \
@@ -264,28 +328,30 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
                         cur.execute(sql)
 
+                        if not check_extjob_id:
+                            # extjob_id field 검사
+                            sql = u"select count(column_name) from information_schema.columns " \
+                                  u"where table_schema = 'extjob' and table_name = '{}_{}' " \
+                                  u"and column_name = 'extjob_id'".format(receive_id.lower(),layer_nm)
+                            cur.execute(sql)
+                            exist_col = cur.fetchone()
+
+                            # extjob_id 가 아예 없는 경우 생성해 줌
+                            if exist_col[0] <= 0:
+                                sql = u"alter table extjob.{0}_{1} add column extjob_id character varying(80)"\
+                                    .format(receive_id,layer_nm)
+                                cur.execute(sql)
+
+                            sql = u"UPDATE extjob.{0}_{1} set extjob_id = '{2}'"\
+                                .format(receive_id,layer_nm,extjob_id)
+                            cur.execute(sql)
+
                         sql = u"ALTER TABLE extjob.{0} ADD COLUMN receive_id character varying(16); " \
                               u"UPDATE extjob.{0} SET receive_id = '{1}';  " \
                               .format(table_nm, receive_id)
                         cur.execute(sql)
 
-                        # TODO: 파일 내에 여러 extjob_id 가 있는 경우 대비하여 코딩 수정 필요
                         # receive_main import
-                        sql = u'SELECT extjob_id FROM extjob.{} ' \
-                              u'group by extjob_id having extjob_id is not NULL'.format(table_nm)
-                        cur.execute(sql)
-                        result_gruop = cur.fetchone()
-
-                        # 사용자가 선택한 extjob_id와 파일의 그것이 다를 때 대응
-                        # extjob_id = result_gruop[0]
-                        file_extjob_id = result_gruop[0]
-                        if extjob_id != file_extjob_id:
-                            rc = QMessageBox.question(self, u"경고", u"{} 파일의 외주ID({})가 선택한 작업의 외주ID({})와 다릅니다.\n"
-                                                      u"그래도 계속 하시겠습니까?".format(layer_nm, file_extjob_id, extjob_id),
-                                                      QMessageBox.Yes, QMessageBox.No)
-                            if rc != QMessageBox.Yes:
-                                continue  # 다음 레이어 처리로
-
                         sql = u'INSERT INTO extjob.receive_main VALUES(%s, %s, %s, %s)'
                         cur.execute(sql,(receive_id, extjob_id, layer_nm, receive_dttm))
 
@@ -293,8 +359,15 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                         sql = u'INSERT INTO extjob.receive_layer VALUES (%s, %s, %s)'
                         cur.execute(sql,(receive_id, layer_nm, table_nm))
 
-                self.conn.commit()
+                sql = u"SELECT count(*) FROM extjob.receive_main where receive_id = '{}'".format(receive_id)
+                cur.execute(sql)
+                res = cur.fetchone()
 
+                if res[0] <= 0:
+                    QMessageBox.information(self,u'작업완료',u'납품된 데이터가 없습니다.')
+                    return
+
+                self.conn.commit()
                 return receive_id
             else:
                 return
@@ -354,7 +427,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 omit_field = ','.join(fields)
                 msg += u'파일명 : {}\n- 누락된 칼럼 : {}\n\n'.format(file_nm, omit_field)
 
-            QMessageBox.warning(self, u"오류", msg)
+            QMessageBox.error(self, u"오류", msg)
 
             return False
 
