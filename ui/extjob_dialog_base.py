@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file '.\ui\extjob.ui'
 #
-# Created: Sun May 15 17:57:03 2016
+# Created: Fri May 20 10:41:12 2016
 #      by: PyQt4 UI code generator 4.10.2
 #
 # WARNING! All changes made in this file will be lost!

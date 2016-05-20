@@ -398,6 +398,10 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 for result in results:
                     column_list.add(result[0])
 
+                if len(column_list) == 0:
+                    QMessageBox.warning(self, u"경고", u"{} 파일은 표준에 없는 레이어이기에 무시됩니다.".format(fileName))
+                    return False
+
                 column_list.remove('ogc_fid')
                 column_list.remove('wkb_geometry')
 

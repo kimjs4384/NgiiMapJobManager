@@ -100,8 +100,7 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         self.cmb_worker_nm.clear()
 
         conf = ConfigParser.SafeConfigParser()
-        conf.read(os.path.join('/Users/jsKim-pc/.qgis2/python/plugins/NgiiMapJobManager',
-                               "conf", "NgiiMapJobManager.conf"))
+        conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
         names = conf.options('Worker_nm')
 
         for name in names:

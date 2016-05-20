@@ -684,7 +684,7 @@ class WidgetInspect(QWidget, Ui_Form):
                 symbol = QgsLineSymbolV2().createSimple({'color': color, 'width': '1',
                                                          'style': 'solid'})
             else:
-                symbol = QgsMarkerSymbolV2.createSimple({'name': 'circle', 'color': color , 'size': '4',
+                symbol = QgsMarkerSymbolV2.createSimple({'name': 'circle', 'color': color , 'size': '2',
                                                          'outline_style': 'no'})
             category = QgsRendererCategoryV2(mod_type, symbol, label)
             categories.append(category)
