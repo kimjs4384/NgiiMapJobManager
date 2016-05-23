@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file '.\ui\receive.ui'
 #
-# Created: Sun May 15 17:57:04 2016
+# Created: Fri May 20 10:41:13 2016
 #      by: PyQt4 UI code generator 4.10.2
 #
 # WARNING! All changes made in this file will be lost!

@@ -383,6 +383,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         sql = u''
         check_res = []
 
+<<<<<<< HEAD
         if os.path.splitext(fileName)[1] == '.shp':
             field_list = set([])
             column_list = set([])
@@ -418,6 +419,44 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
             if len(check) != 0:
                 print list(check)
                 check_res.append({'file_nm': layer_nm, 'fields': list(check)})
+=======
+        for fileName in os.listdir(self.edt_data_folder.text()):
+            if os.path.splitext(fileName)[1] == '.shp':
+                field_list = set([])
+                column_list = set([])
+                layer_nm = os.path.splitext(fileName)[0]
+
+                # 기본 칼럼 ( 마스터 디비에 있는 칼럼 ) 가져오기
+                sql = u"select column_name from information_schema.columns " \
+                      u"where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(layer_nm)
+                cur.execute(sql)
+                results = cur.fetchall()
+                for result in results:
+                    column_list.add(result[0])
+
+                if len(column_list) == 0:
+                    QMessageBox.warning(self, u"경고", u"{} 파일은 표준에 없는 레이어이기에 무시됩니다.".format(fileName))
+                    return False
+
+                column_list.remove('ogc_fid')
+                column_list.remove('wkb_geometry')
+
+                # shp의 필드명 가져오기
+                shp = os.path.join(self.edt_data_folder.text(), fileName)
+                data = ogr.Open(shp)
+                layer = data.GetLayer(0)
+                layer_de = layer.GetLayerDefn()
+
+                for i in range(layer_de.GetFieldCount()):
+                    field_list.add(layer_de.GetFieldDefn(i).GetName())
+
+                # 칼럼 체크하기
+                check = column_list.difference(field_list)
+
+                if len(check) != 0:
+                    print list(check)
+                    check_res.append({'file_nm': layer_nm, 'fields': list(check)})
+>>>>>>> b9d5b7f6558ee4d151dcdeb9e3813eaf25142adb
 
         if len(check_res) != 0:
             msg = u''

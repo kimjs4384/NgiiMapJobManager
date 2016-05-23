@@ -274,51 +274,85 @@
         </widget>
        </item>
        <item row="4" column="0">
-        <widget class="QPushButton" name="btn_accept">
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>40</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>승인</string>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="0">
-        <layout class="QHBoxLayout" name="horizontalLayout">
+        <layout class="QHBoxLayout" name="horizontalLayout_8">
          <item>
-          <widget class="QPushButton" name="btn_prev">
-           <property name="text">
-            <string>&lt; 이전항목</string>
-           </property>
-          </widget>
+          <layout class="QVBoxLayout" name="verticalLayout_2">
+           <item>
+            <widget class="QPushButton" name="btn_accept">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>40</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>승인</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayout">
+             <item>
+              <widget class="QPushButton" name="btn_prev">
+               <property name="text">
+                <string>&lt; 이전항목</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btn_next">
+               <property name="text">
+                <string>다음항목&gt;</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_reject">
+             <property name="text">
+              <string>거부</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </item>
          <item>
-          <widget class="QPushButton" name="btn_next">
+          <widget class="QPushButton" name="pushButton">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Fixed" vsizetype="Expanding">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>49</width>
+             <height>0</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>50</width>
+             <height>16777215</height>
+            </size>
+           </property>
            <property name="text">
-            <string>다음항목&gt;</string>
+            <string>속성
+보기</string>
            </property>
           </widget>
          </item>
         </layout>
        </item>
-       <item row="6" column="0">
-        <widget class="QPushButton" name="btn_reject">
-         <property name="text">
-          <string>거부</string>
-         </property>
-        </widget>
-       </item>
-       <item row="7" column="0">
+       <item row="5" column="0">
         <widget class="QLabel" name="label_4">
          <property name="text">
           <string>거부사유</string>
          </property>
         </widget>
        </item>
-       <item row="8" column="0">
+       <item row="6" column="0">
         <widget class="QPlainTextEdit" name="edt_reject_reason">
          <property name="minimumSize">
           <size>
@@ -334,7 +368,7 @@
          </property>
         </widget>
        </item>
-       <item row="9" column="0">
+       <item row="7" column="0">
         <widget class="QPushButton" name="btn_make_report">
          <property name="minimumSize">
           <size>

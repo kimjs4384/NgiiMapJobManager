@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file '.\ui\inspect.ui'
 #
-# Created: Sun May 15 17:57:04 2016
+# Created: Fri May 20 10:41:13 2016
 #      by: PyQt4 UI code generator 4.10.2
 #
 # WARNING! All changes made in this file will be lost!
@@ -153,10 +153,14 @@ class Ui_Dialog(object):
         self.lbl_progress = QtGui.QLabel(self.scrollAreaWidgetContents)
         self.lbl_progress.setObjectName(_fromUtf8("lbl_progress"))
         self.gridLayout_2.addWidget(self.lbl_progress, 3, 0, 1, 1)
+        self.horizontalLayout_8 = QtGui.QHBoxLayout()
+        self.horizontalLayout_8.setObjectName(_fromUtf8("horizontalLayout_8"))
+        self.verticalLayout_2 = QtGui.QVBoxLayout()
+        self.verticalLayout_2.setObjectName(_fromUtf8("verticalLayout_2"))
         self.btn_accept = QtGui.QPushButton(self.scrollAreaWidgetContents)
         self.btn_accept.setMinimumSize(QtCore.QSize(0, 40))
         self.btn_accept.setObjectName(_fromUtf8("btn_accept"))
-        self.gridLayout_2.addWidget(self.btn_accept, 4, 0, 1, 1)
+        self.verticalLayout_2.addWidget(self.btn_accept)
         self.horizontalLayout = QtGui.QHBoxLayout()
         self.horizontalLayout.setObjectName(_fromUtf8("horizontalLayout"))
         self.btn_prev = QtGui.QPushButton(self.scrollAreaWidgetContents)
@@ -165,18 +169,30 @@ class Ui_Dialog(object):
         self.btn_next = QtGui.QPushButton(self.scrollAreaWidgetContents)
         self.btn_next.setObjectName(_fromUtf8("btn_next"))
         self.horizontalLayout.addWidget(self.btn_next)
-        self.gridLayout_2.addLayout(self.horizontalLayout, 5, 0, 1, 1)
+        self.verticalLayout_2.addLayout(self.horizontalLayout)
         self.btn_reject = QtGui.QPushButton(self.scrollAreaWidgetContents)
         self.btn_reject.setObjectName(_fromUtf8("btn_reject"))
-        self.gridLayout_2.addWidget(self.btn_reject, 6, 0, 1, 1)
+        self.verticalLayout_2.addWidget(self.btn_reject)
+        self.horizontalLayout_8.addLayout(self.verticalLayout_2)
+        self.pushButton = QtGui.QPushButton(self.scrollAreaWidgetContents)
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.pushButton.sizePolicy().hasHeightForWidth())
+        self.pushButton.setSizePolicy(sizePolicy)
+        self.pushButton.setMinimumSize(QtCore.QSize(49, 0))
+        self.pushButton.setMaximumSize(QtCore.QSize(50, 16777215))
+        self.pushButton.setObjectName(_fromUtf8("pushButton"))
+        self.horizontalLayout_8.addWidget(self.pushButton)
+        self.gridLayout_2.addLayout(self.horizontalLayout_8, 4, 0, 1, 1)
         self.label_4 = QtGui.QLabel(self.scrollAreaWidgetContents)
         self.label_4.setObjectName(_fromUtf8("label_4"))
-        self.gridLayout_2.addWidget(self.label_4, 7, 0, 1, 1)
+        self.gridLayout_2.addWidget(self.label_4, 5, 0, 1, 1)
         self.edt_reject_reason = QtGui.QPlainTextEdit(self.scrollAreaWidgetContents)
         self.edt_reject_reason.setMinimumSize(QtCore.QSize(0, 100))
         self.edt_reject_reason.setMaximumSize(QtCore.QSize(16777215, 16777215))
         self.edt_reject_reason.setObjectName(_fromUtf8("edt_reject_reason"))
-        self.gridLayout_2.addWidget(self.edt_reject_reason, 8, 0, 1, 1)
+        self.gridLayout_2.addWidget(self.edt_reject_reason, 6, 0, 1, 1)
         self.btn_make_report = QtGui.QPushButton(self.scrollAreaWidgetContents)
         self.btn_make_report.setMinimumSize(QtCore.QSize(0, 40))
         font = QtGui.QFont()
@@ -184,7 +200,7 @@ class Ui_Dialog(object):
         font.setWeight(75)
         self.btn_make_report.setFont(font)
         self.btn_make_report.setObjectName(_fromUtf8("btn_make_report"))
-        self.gridLayout_2.addWidget(self.btn_make_report, 9, 0, 1, 1)
+        self.gridLayout_2.addWidget(self.btn_make_report, 7, 0, 1, 1)
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
         self.gridLayout.addWidget(self.scrollArea, 0, 0, 1, 1)
 
@@ -206,6 +222,8 @@ class Ui_Dialog(object):
         self.btn_prev.setText(_translate("Dialog", "< 이전항목", None))
         self.btn_next.setText(_translate("Dialog", "다음항목>", None))
         self.btn_reject.setText(_translate("Dialog", "거부", None))
+        self.pushButton.setText(_translate("Dialog", "속성\n"
+"보기", None))
         self.label_4.setText(_translate("Dialog", "거부사유", None))
         self.btn_make_report.setText(_translate("Dialog", "검수 리포트 작성", None))
 
