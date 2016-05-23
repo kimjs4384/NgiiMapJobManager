@@ -74,6 +74,7 @@ class WidgetInspect(QWidget, Ui_Form):
         self.date_mapext_dttm.dateChanged.connect(self.hdrCmbWorkerIndexChange)
         self.cmb_receive_id.currentIndexChanged.connect(self.addLayerList)
         self.cmb_extjob_nm.currentIndexChanged.connect(self.hdrCmbExtjobNmIndexChange)
+        self.cmb_layer_nm.currentIndexChanged.connect(self.refreshUI)
         self.btn_start_inspect.clicked.connect(self.hdrClickBtnStartInspect)
         self.btn_next.clicked.connect(self.hdrClickBtnNext)
         self.btn_prev.clicked.connect(self.hdrClickBtnPrev)
@@ -179,6 +180,19 @@ class WidgetInspect(QWidget, Ui_Form):
         except Exception as e:
             QMessageBox.warning(self, "SQL ERROR", str(e))
 
+    def refreshUI(self):
+        if self.btn_start_inspect.isVisible() == False:
+            # TODO: 이전에 변경 탐지에 대한 정보는 어떻게
+            self.btn_start_inspect.setVisible(True)
+            self.btn_accept.setDisabled(True)
+            self.btn_next.setDisabled(True)
+            self.btn_prev.setDisabled(True)
+            self.btn_reject.setDisabled(True)
+            self.btn_make_report.setDisabled(True)
+
+            self.progressBar.hide()
+            self.lbl_progress.hide()
+
     def hdrCmbExtjobNmIndexChange(self):
         self.addLayerList()
 
@@ -202,7 +216,7 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def hdrClickBtnStartInspect(self):
         if self.cmb_layer_nm.currentText() == "":
-            QMessageBox.warning(self, u"오류", u"검수할 레이러를 선택하셔야합니다.")
+            QMessageBox.warning(self, u"오류", u"검수할 레이어를 선택하셔야합니다.")
             return
 
         if self.edt_inpector.text() == "":

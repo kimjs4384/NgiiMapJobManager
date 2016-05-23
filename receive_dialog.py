@@ -65,6 +65,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.btn_upload.clicked.connect(self.hdrClickBtnUpload)
         self.btn_inspect.clicked.connect(self.hdrClickBtnInspect)
         self.cmb_extjob_nm.currentIndexChanged.connect(self.getWorkArea)
+        self.date_mapext_dttm.dateChanged.connect(self.checkData)
 
     def setInitValue(self):
         self.fillWorkerList()
@@ -99,7 +100,6 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
             with open(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"), "w") as confFile:
                 conf.set("Dir_Info", "receive_dir", folderPath)
                 conf.write(confFile)
-
 
     def hdrClickBtnUpload(self):
         self.progressBar.show()
@@ -197,6 +197,12 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
         self.lst_workarea.setModel(st_model)
 
+    def checkData(self):
+        start_data = self.date_mapext_dttm.date()
+        end_data = self.date_mapext_dttm_2.date()
+        if start_data > end_data:
+            self.date_mapext_dttm_2.setDate(start_data)
+
     def importRecData(self):
         try:
             # 선택된 extjob_id 확보
@@ -231,7 +237,6 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     if not self.checkColumns(fileName):
                         continue
 
-                    # TODO: 파일 내에 여러 extjob_id 가 있는 경우 대비하여 코딩 수정 필요
                     # 파일과 선택한 extjob_id 일치여부
                     extjob_id_list = []
                     check_extjob_id = True
@@ -256,7 +261,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                         for row in shp_data:
                             extjob_id_list.append(row.GetField('extjob_id'))
 
-                    # extjob_id 값의 수에 따라서 분류류
+                    # extjob_id 값의 수에 따라서 분류
                     if len(extjob_id_list) == 0: # extjob_id 가 없는 경우
                         rc = QMessageBox.question(self,u'경고',u'{} 파일에 외주ID가 존재하지 않습니다.\n'
                                                        u'선택한 외주ID({})로 계속 하시겠습니까?'
