@@ -31,9 +31,11 @@ import time
 import ConfigParser
 import zipfile
 
+from qgis._gui import QgsMapCanvasLayer
 from qgis.core import *
 
 from ui.inspect_dialog_base import Ui_Dialog as Ui_Form
+from attr_view_dialog import DiaAttrView
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'ui/inspect.ui'))
@@ -47,19 +49,21 @@ class WidgetInspect(QWidget, Ui_Form):
     crrIndex = None
     numTotal = -1
     numProcessed = 0
+    inspect_id = None
+    layer_nm = None
+    receive_id = None
+    extjob_id = None
+    id_column = None
+    column_sql = None
+    maintain_data = None
+    diff_data = None
+    inspectList = None
 
     def __init__(self, iface, dockwidget, parent):
         QWidget.__init__(self)
         Ui_Form.__init__(self)
         self.setupUi(self)
         self.plugin = parent
-
-        self.inspect_id = None
-        self.layer_nm = None
-        self.receive_id = None
-        self.extjob_id = None
-        self.id_column = None
-        self.column_sql = None
 
         self.setInitValue()
         self.connectFct()
@@ -81,6 +85,7 @@ class WidgetInspect(QWidget, Ui_Form):
         self.btn_accept.clicked.connect(self.hdrClickBtnAccept)
         self.btn_reject.clicked.connect(self.hdrClickBtnReject)
         self.btn_make_report.clicked.connect(self.hdrClickBtnMakeReport)
+        self.btn_show_attr.clicked.connect(self.showAttrFeature)
 
     def setInitValue(self):
         self.fillWorkerList()
@@ -189,6 +194,8 @@ class WidgetInspect(QWidget, Ui_Form):
             self.btn_prev.setDisabled(True)
             self.btn_reject.setDisabled(True)
             self.btn_make_report.setDisabled(True)
+
+            self.inspectList
 
             self.progressBar.hide()
             self.lbl_progress.hide()
@@ -313,10 +320,14 @@ class WidgetInspect(QWidget, Ui_Form):
                                                     mod_type_txt, insp_stat_txt)
         self.lbl_progress.setText(message)
 
-        geom = self.inspectList[self.crrIndex].geometry()
+        geom = crrFeature.geometry()
         bound = geom.boundingBox()
         canvas = self.plugin.iface.mapCanvas()
         canvas.setExtent(bound)
+
+        feature_id = crrFeature.id()
+        self.diff_data.setSelectedFeatures([feature_id])
+
         canvas.zoomOut()
         canvas.refresh()
 
@@ -505,13 +516,16 @@ class WidgetInspect(QWidget, Ui_Form):
 
         sql = u"with geom_same_data as ( select o.* from (select {0},{1} from extjob.{2}_view) as o " \
               u"inner join (select {0},{1} from extjob.{3}_{2}) as e " \
-              u"on o.mbr_hash_12 = e.mbr_hash_12 {6} )," \
-              u"same_data as (select o.* from (select {0} from geom_same_data) as o " \
-              u"inner join (select {0} from extjob.{3}_{2}) as e on (o.*) = (e.*))," \
-              u"origin as ( select o.ogc_fid as origin_ogc_fid, a.{4} from same_data as a " \
-              u"inner join extjob.{2}_view as o on a.{4} = o.{4} )," \
+              u"on o.mbr_hash_12 = e.mbr_hash_12 {6} and o.{4} = e.{4} )," \
+              u"same_data as (select o.* from (select {0},mbr_hash_12 from geom_same_data) as o " \
+              u"inner join (select {0},st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
+              u"as mbr_hash_12 from extjob.{3}_{2}) as e on (o.*) = (e.*))," \
+              u"origin as (select o.ogc_fid as origin_ogc_fid, a.{4} from same_data as a " \
+              u"inner join (select ogc_fid, {4},st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
+              u"as mbr_hash_12 from extjob.{2}_view) as o on a.{4} = o.{4} and a.mbr_hash_12 = o.mbr_hash_12 )," \
               u"receive as (select o.ogc_fid as receive_ogc_fid, a.{4} from same_data as a " \
-              u"inner join extjob.{3}_{2} as o on a.{4} = o.{4} ) " \
+              u"inner join (select ogc_fid, {4},st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
+              u"as mbr_hash_12 from extjob.{3}_{2}) as o on a.{4} = o.{4} and a.mbr_hash_12 = o.mbr_hash_12 ) " \
               u"insert into extjob.inspect_objlist( inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )" \
               u"select '{5}' as inspect_id, '{2}' as layer_nm, origin_ogc_fid, receive_ogc_fid, " \
               u"'s' as mod_type from origin, receive where origin.{4} = receive.{4}"\
@@ -543,7 +557,7 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def findEditAttr(self):
         cur = self.plugin.conn.cursor()
-
+        # TODO: 지오해쉬와 면적/길이 오차 범위를 모두 충족하는 객체들이 있을때 처리방법
         if self.geom_type == 'MULTIPOLYGON':  # 폴리곤 일때는 GeoHash 와 면적 생성
             sql = u"with same as (select {0}, {1} from (select origin_ogc_fid from extjob.inspect_objlist " \
                   u"where mod_type = 's' and inspect_id = '{2}') as s " \
@@ -551,16 +565,20 @@ class WidgetInspect(QWidget, Ui_Form):
                   u"om as (select {0}, {1} from extjob.{3}_view except select * from same ), " \
                   u"em as (select {0}, {1} from extjob.{4}_{3} except select * from same ), " \
                   u"geometry as ( select mbr_hash_12,geom_area from ( select om.* from om " \
-                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 and em.geom_area = om.geom_area) as t) " \
-                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 and " \
+                  u"em.geom_area between om.geom_area*0.95 and om.geom_area*1.05 ) as t) " \
+                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid,receive_ogc_fid,mod_type)"\
                   u"select '{2}' as inspect_id, '{3}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
                   u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12, o.geom_area from geometry " \
                   u"inner join (select ogc_fid, {1} from extjob.{3}_view ) as o " \
-                  u"on (geometry.mbr_hash_12,geometry.geom_area)=(o.mbr_hash_12,o.geom_area)) as origin, " \
+                  u"on geometry.mbr_hash_12=o.mbr_hash_12 " \
+                  u"and geometry.geom_area between o.geom_area*0.95 and o.geom_area*1.05) as origin, " \
                   u"(select ogc_fid as receive_ogc_fid, o.mbr_hash_12, o.geom_area from geometry " \
                   u"inner join (select ogc_fid, {1} from extjob.{4}_{3} ) as o " \
-                  u"on (geometry.mbr_hash_12,geometry.geom_area)=(o.mbr_hash_12,o.geom_area)) as receive " \
-                  u"where (origin.mbr_hash_12,origin.geom_area) = (receive.mbr_hash_12,receive.geom_area)" \
+                  u"on geometry.mbr_hash_12=o.mbr_hash_12 " \
+                  u"and geometry.geom_area between o.geom_area*0.95 and o.geom_area*1.05) as receive " \
+                  u"where receive.mbr_hash_12=origin.mbr_hash_12 " \
+                  u"and receive.geom_area between origin.geom_area*0.95 and origin.geom_area*1.05" \
                 .format(self.column_sql, self.geohash_sql, self.inspect_id,
                         self.layer_nm, self.receive_id)
         elif self.geom_type == 'MULTILINESTRING':  # 선 일때는 GeoHash 와 길이 생성
@@ -570,16 +588,20 @@ class WidgetInspect(QWidget, Ui_Form):
                   u"om as (select {0}, {1} from extjob.{3}_view except select * from same ), " \
                   u"em as (select {0}, {1} from extjob.{4}_{3} except select * from same ), " \
                   u"geometry as ( select mbr_hash_12,geom_length from ( select om.* from om " \
-                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 and em.geom_length = om.geom_length) as t) " \
-                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 " \
+                  u"and em.geom_length between om.geom_length*0.95 and om.geom_length*1.05) as t) " \
+                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid,mod_type)"\
                   u"select '{2}' as inspect_id, '{3}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
                   u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12, o.geom_length from geometry " \
                   u"inner join (select ogc_fid, {1} from extjob.{3}_view ) as o " \
-                  u"on (geometry.mbr_hash_12,geometry.geom_length)=(o.mbr_hash_12,o.geom_length)) as origin, " \
+                  u"on geometry.mbr_hash_12=o.mbr_hash_12 " \
+                  u"and geometry.geom_length between o.geom_length*0.95 and o.geom_length*1.05) as origin, " \
                   u"(select ogc_fid as receive_ogc_fid, o.mbr_hash_12, o.geom_length from geometry " \
                   u"inner join (select ogc_fid, {1} from extjob.{4}_{3} ) as o " \
-                  u"on (geometry.mbr_hash_12,geometry.geom_length)=(o.mbr_hash_12,o.geom_length)) as receive " \
-                  u"where (origin.mbr_hash_12,origin.geom_length) = (receive.mbr_hash_12,receive.geom_length)" \
+                  u"on geometry.mbr_hash_12=o.mbr_hash_12 " \
+                  u"and geometry.geom_length between o.geom_length*0.95 and o.geom_length*1.05) as receive " \
+                  u"where receive.mbr_hash_12=origin.mbr_hash_12 " \
+                  u"and receive.geom_length between origin.geom_length*0.95 and origin.geom_length*1.05" \
                 .format(self.column_sql, self.geohash_sql, self.inspect_id,
                         self.layer_nm, self.receive_id)
         else:  # 점 일때는 GeoHash 만 생성
@@ -629,6 +651,11 @@ class WidgetInspect(QWidget, Ui_Form):
         cur.execute(sql)
 
     def addLayers(self):
+        QgsMapLayerRegistry.instance().removeAllMapLayers()
+        # TODO: 처음 초기화 됐을때는 ?!
+        # if self.maintain_data != None and self.diff_data != None:
+        #     QgsMapLayerRegistry.instance().removeMapLayers([self.maintain_data, self.diff_data])
+
         uri = QgsDataSourceURI()
 
         conf = ConfigParser.SafeConfigParser()
@@ -650,21 +677,21 @@ class WidgetInspect(QWidget, Ui_Form):
 
         uri.setConnection(ip_address, port, database, account, password)
         uri.setDataSource("", sql, "wkb_geometry", "", "id")
-        maintain_data = QgsVectorLayer(uri.uri(), u'변화없음', "postgres")
+        self.maintain_data = QgsVectorLayer(uri.uri(), u'변화없음', "postgres")
 
         symbol = None
-        if maintain_data.wkbType() == QGis.WKBMultiPolygon:
+        if self.maintain_data.wkbType() == QGis.WKBMultiPolygon:
             symbol = QgsFillSymbolV2().createSimple({'color_border': 'gray', 'width_border': '0.5',
                                                      'style': 'no', 'style_border': 'solid'})
-        elif maintain_data.wkbType() == QGis.WKBMultiLineString:
+        elif self.maintain_data.wkbType() == QGis.WKBMultiLineString:
             symbol = QgsLineSymbolV2().createSimple({'color': 'gray', 'width': '0.5',
                                                      'style': 'solid'})
         else:
             symbol = QgsMarkerSymbolV2.createSimple({'name': 'circle', 'color': 'gray', 'size': '2',
                                                      'outline_style': 'no'})
 
-        maintain_data.rendererV2().setSymbol(symbol)
-        QgsMapLayerRegistry.instance().addMapLayer(maintain_data)
+        self.maintain_data.rendererV2().setSymbol(symbol)
+        QgsMapLayerRegistry.instance().addMapLayer(self.maintain_data)
 
         # 변화가 있는 정보
         sql = u"(select row_number() over (order by mod_type asc) as id, * from (select ext.*, wkb_geometry, {} from "\
@@ -679,7 +706,7 @@ class WidgetInspect(QWidget, Ui_Form):
                         self.layer_nm, self.inspect_id, self.receive_id, self.layer_nm)
 
         uri.setDataSource("",sql, "wkb_geometry", "" , "id")
-        diff_data = QgsVectorLayer(uri.uri(), u'변화정보', "postgres")
+        self.diff_data = QgsVectorLayer(uri.uri(), u'변화정보', "postgres")
 
         mod_type_symbol = {
             'a' : ('green',u'추가'),
@@ -688,7 +715,7 @@ class WidgetInspect(QWidget, Ui_Form):
             'ef' : ('blue',u'속성변경')
         }
 
-        diff_data_type = diff_data.wkbType()
+        diff_data_type = self.diff_data.wkbType()
         categories = []
         for mod_type, (color, label) in mod_type_symbol.items():
             if diff_data_type == QGis.WKBMultiPolygon:
@@ -705,13 +732,13 @@ class WidgetInspect(QWidget, Ui_Form):
 
         expression = 'mod_type'  # field name
         renderer = QgsCategorizedSymbolRendererV2(expression, categories)
-        diff_data.setRendererV2(renderer)
+        self.diff_data.setRendererV2(renderer)
 
-        QgsMapLayerRegistry.instance().addMapLayer(diff_data)
+        QgsMapLayerRegistry.instance().addMapLayer(self.diff_data)
 
         self.inspectList = []
         self.crrIndex = -1
-        iter = diff_data.getFeatures()
+        iter = self.diff_data.getFeatures()
         for feature in iter:
             self.inspectList.append(feature)
 
@@ -971,3 +998,72 @@ class WidgetInspect(QWidget, Ui_Form):
             QMessageBox.information(self, u"작업완료", u"검수 레포트 작성이 완료되었습니다.")
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"레포트 작성중 오류가 발생하였습니다.\n{}".format(e))
+
+    def showAttrFeature(self):
+        try:
+            if self.inspectList != None:
+                self.dlgAttrView = DiaAttrView(self.plugin)
+                self.dlgAttrView.show()
+
+                dlgObjlist = [
+                    [self.dlgAttrView.field_nm_1, self.dlgAttrView.edt_before_1, self.dlgAttrView.edi_after_1],
+                    [self.dlgAttrView.field_nm_2, self.dlgAttrView.edt_before_2, self.dlgAttrView.edi_after_2],
+                    [self.dlgAttrView.field_nm_3, self.dlgAttrView.edt_before_3, self.dlgAttrView.edi_after_3],
+                    [self.dlgAttrView.field_nm_4, self.dlgAttrView.edt_before_4, self.dlgAttrView.edi_after_4],
+                    [self.dlgAttrView.field_nm_5, self.dlgAttrView.edt_before_5, self.dlgAttrView.edi_after_5],
+                    [self.dlgAttrView.field_nm_6, self.dlgAttrView.edt_before_6, self.dlgAttrView.edi_after_6],
+                    [self.dlgAttrView.field_nm_7, self.dlgAttrView.edt_before_7, self.dlgAttrView.edi_after_7],
+                    [self.dlgAttrView.field_nm_8, self.dlgAttrView.edt_before_8, self.dlgAttrView.edi_after_8],
+                    [self.dlgAttrView.field_nm_9, self.dlgAttrView.edt_before_9, self.dlgAttrView.edi_after_9],
+                    [self.dlgAttrView.field_nm_10, self.dlgAttrView.edt_before_10, self.dlgAttrView.edi_after_10],
+                    [self.dlgAttrView.field_nm_11, self.dlgAttrView.edt_before_11, self.dlgAttrView.edi_after_11],
+                    [self.dlgAttrView.field_nm_12, self.dlgAttrView.edt_before_12, self.dlgAttrView.edi_after_12],
+                    [self.dlgAttrView.field_nm_13, self.dlgAttrView.edt_before_13, self.dlgAttrView.edi_after_13],
+                    [self.dlgAttrView.field_nm_14, self.dlgAttrView.edt_before_14, self.dlgAttrView.edi_after_14],
+                    [self.dlgAttrView.field_nm_15, self.dlgAttrView.edt_before_15, self.dlgAttrView.edi_after_15],
+                    [self.dlgAttrView.field_nm_16, self.dlgAttrView.edt_before_16, self.dlgAttrView.edi_after_16],
+                    [self.dlgAttrView.field_nm_17, self.dlgAttrView.edt_before_17, self.dlgAttrView.edi_after_17],
+                    [self.dlgAttrView.field_nm_18, self.dlgAttrView.edt_before_18, self.dlgAttrView.edi_after_18],
+                    [self.dlgAttrView.field_nm_19, self.dlgAttrView.edt_before_19, self.dlgAttrView.edi_after_19],
+                    [self.dlgAttrView.field_nm_20, self.dlgAttrView.edt_before_20, self.dlgAttrView.edi_after_20],
+                    [self.dlgAttrView.field_nm_21, self.dlgAttrView.edt_before_21, self.dlgAttrView.edi_after_21],
+                    [self.dlgAttrView.field_nm_22, self.dlgAttrView.edt_before_22, self.dlgAttrView.edi_after_22],
+                    [self.dlgAttrView.field_nm_23, self.dlgAttrView.edt_before_23, self.dlgAttrView.edi_after_23],
+                    [self.dlgAttrView.field_nm_24, self.dlgAttrView.edt_before_24, self.dlgAttrView.edi_after_24],
+                    [self.dlgAttrView.field_nm_25, self.dlgAttrView.edt_before_25, self.dlgAttrView.edi_after_25]
+                ]
+
+                crrFeature = self.inspectList[self.crrIndex]
+                field_names = [field.name() for field in self.diff_data.pendingFields()]
+                field_names.remove(u'id')
+                field_names.remove(u'inspect_id')
+                field_names.remove(u'layer_nm')
+                field_names.remove(u'inspect_dttm')
+                field_names.remove(u'inspect_res')
+                field_names.remove(u'reject_reason')
+
+                originFeature = None
+                if crrFeature['origin_ogc_fid'] != 0 and crrFeature['receive_ogc_fid'] != 0:
+                    request = QgsFeatureRequest().setFilterExpression(u'"origin_ogc_fid" = \'{}\''
+                                                                      .format(crrFeature['origin_ogc_fid']))
+                    originFeatures = self.maintain_data.getFeatures(request)
+                    for feature in originFeatures:
+                        originFeature = feature
+
+                for i in range(0,len(field_names)):
+                    dlgObjlist[i][0].setText(field_names[i])
+                    dlgObjlist[i][2].setText(u'{}'.format(crrFeature[field_names[i]]))
+                    if originFeature != None:
+                        dlgObjlist[i][1].setText(u'{}'.format(originFeature[field_names[i]]))
+
+                        # TODO: 소수값 속성 비교 ( 탐지에서는 다름 / 속성보기에선 같음 )
+                        if originFeature[field_names[i]] != crrFeature[field_names[i]]:
+                            dlgObjlist[i][1].setStyleSheet("border: 1px solid red;")
+                            dlgObjlist[i][2].setStyleSheet("border: 1px solid red;")
+
+                for i in range(len(field_names), len(dlgObjlist)):
+                    dlgObjlist[i][0].setVisible(False)
+                    dlgObjlist[i][1].setVisible(False)
+                    dlgObjlist[i][2].setVisible(False)
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", u"속성 뷰어에 문제가 발생했습니다.\n{}".format(e))
