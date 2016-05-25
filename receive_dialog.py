@@ -77,7 +77,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.lbl_progress.hide()
 
         self.btn_upload.setDisabled(False)
-        self.btn_inspect.setDisabled(True)
+        self.btn_inspectbtn_inspect.setDisabled(True)
 
     def hdrClickBtnSearch(self):
         self.cmb_extjob_nm.clear()
@@ -239,6 +239,10 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     layer_nm = os.path.splitext(fileName)[0]
                     table_nm = receive_id + "_" + layer_nm
                     shp_path = os.path.join(self.edt_data_folder.text(),fileName)
+
+                    # 기본 파일 검사
+                    if not self.checkExtjobFile(layer_nm):
+                        continue
 
                     # 받은 적이 있는 레이어 인지 체크 extjob_id + layer_nm
                     if not self.checkReceive(layer_nm):
@@ -457,7 +461,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"extjob_id를 검사하던 중 에러가 발생했습니다.\n{}".format(e))
 
-    def checkReceive(self,layer_nm):
+    def checkExtjobFile(self,layer_nm):
         try:
             cur = self.plugin.conn.cursor()
 
@@ -468,8 +472,38 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
             if result[0] <= 0:
                 QMessageBox.warning(self, u"경고", u"{}.shp 파일은 표준에 없는 레이어이기에 무시됩니다.".format(layer_nm))
-                self.failLayer += u"{}.shp\n".format(layer_nm)
+                self.failLayer += u"- {}.shp (비표준)\n".format(layer_nm)
                 return False
+
+            # .cpg .dbf .prj .shx 파일 확인
+            omitFile = u''
+
+            if not os.path.exists(os.path.join(self.edt_data_folder.text(),u"{}.cpg".format(layer_nm))):
+                omitFile += u"- {}.cpg\n".format(layer_nm)
+
+            if not os.path.exists(os.path.join(self.edt_data_folder.text(), u"{}.dbf".format(layer_nm))):
+                omitFile += u"- {}.dbf\n".format(layer_nm)
+
+            if not os.path.exists(os.path.join(self.edt_data_folder.text(), u"{}.prj".format(layer_nm))):
+                omitFile += u"- {}.prj\n".format(layer_nm)
+
+            if not os.path.exists(os.path.join(self.edt_data_folder.text(), u"{}.shx".format(layer_nm))):
+                omitFile += u"- {}.shx\n".format(layer_nm)
+
+            if omitFile != u'':
+                QMessageBox.warning(self, u"경고", u"{}.shp 파일은 다음 파일(들)이 누락되어 무시됩니다.\n"
+                                                 u"\n누락된 파일\n{}".format(layer_nm,omitFile))
+                self.failLayer += u"- {}.shp (관련 파일 누락)\n".format(layer_nm)
+                return False
+
+            return True
+
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", u"파일 검사 중 에러가 발생했습니다\n{}".format(e))
+
+    def checkReceive(self,layer_nm):
+        try:
+            cur = self.plugin.conn.cursor()
 
             # 외주ID 와 레이어명을 통해서 이전에 받은 기록을 검사
             extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
@@ -482,7 +516,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
             if result[0] > 0:
                 QMessageBox.warning(self, u"경고", u"{}.shp 파일은 이미 납품받은 레이어이기 때문에 다음 레이어로 넘어 갑니다."
                                     .format(layer_nm))
-                self.passLayer += u"{}.shp\n".format(layer_nm)
+                self.passLayer += u"- {}.shp\n".format(layer_nm)
                 return False
 
             return True
