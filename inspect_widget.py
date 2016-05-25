@@ -167,7 +167,7 @@ class WidgetInspect(QWidget, Ui_Form):
 
             sel_extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
             sql = u"select receive_id from (select * from extjob.receive_main where extjob_id = '{}') as ext " \
-                  u"group by receive_id".format(sel_extjob_id)
+                  u"group by receive_id order by receive_id asc".format(sel_extjob_id)
             cur.execute(sql)
             results = cur.fetchall()
 
@@ -230,21 +230,62 @@ class WidgetInspect(QWidget, Ui_Form):
             QMessageBox.warning(self, u"오류", u"검수자가 기록되어야합니다.")
             return
 
-        rc = QMessageBox.question(self, u"확인", u"변경탐지를 시작하시겠습니까?",
-                                  QMessageBox.Yes, QMessageBox.No)
-        if rc != QMessageBox.Yes:
+        # 검수 결과가 있는지 체크
+        res = self.checkInspect()
+        if res == 1:
+            rc = QMessageBox.question(self, u"확인", u"변화탐지를 다시 하시겠습니까?\n"
+                                                   u"다시 할 경우 기존의 데이터는 삭제 됩니다.",
+                                      QMessageBox.Yes, QMessageBox.No)
+            if rc == QMessageBox.Yes:
+                self.deleteInspectData()
+                self.findChange()
+            else:
+                self.lbl_progress.setText(u"데이터 불러오는 중...")
+                self.lbl_progress.show()
+                self.btn_start_inspect.setVisible(False)  # 자리가 좁아 안보이게 하는 것으로 수정
+                self.btn_accept.setDisabled(False)
+                self.btn_next.setDisabled(False)
+                self.btn_prev.setDisabled(False)
+                self.btn_reject.setDisabled(False)
+                self.btn_make_report.setDisabled(False)
+                # 변화정보 양을 세서 보여줌
+                self.countDiffFeature()
+                self.addLayers()
+
+        elif res == 2:
+            self.findChange()
+        else:
             return
 
-        # 변경된 데이터가 하나도 없을 경우 불필요함으로 변경 유무를 판단하는 곳으로 이동
-        # self.btn_start_inspect.setDisabled(True)
-        # self.btn_start_inspect.setVisible(False)  # 자리가 좁아 안보이게 하는 것으로 수정
-        # self.btn_accept.setDisabled(False)
-        # self.btn_next.setDisabled(False)
-        # self.btn_prev.setDisabled(False)
-        # self.btn_reject.setDisabled(False)
-        # self.btn_make_report.setDisabled(False)
+    def checkInspect(self):
+        try:
+            cur = self.plugin.conn.cursor()
 
-        self.findChange()
+            self.receive_id = self.cmb_receive_id.currentText()
+            self.layer_nm = self.cmb_layer_nm.currentText()
+
+            sql = u"select inspect_id from extjob.inspect_main where receive_id ='{}' " \
+                  u"and layer_nm = '{}' order by start_dttm desc".format(self.receive_id,self.layer_nm)
+            cur.execute(sql)
+            results = cur.fetchall()
+
+            if len(results) > 0:
+                self.inspect_id = results[0][0]
+                rc = QMessageBox.question(self, u"주의", u"검수 기록이 존재하는 데이터입니다.\n"
+                                                       u"다시 검수하시겠습니까?"
+                                          , QMessageBox.Yes, QMessageBox.No)
+                if rc == QMessageBox.Yes:
+                    # 새로운 검수
+                    return 1
+                else:
+                    # 취소
+                    return 0
+            # 바로 변화탐지
+            return 2
+
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", u"검수 중복 검사 중 에러가 발생하였습니다.\n{}".format(e))
+            return 0
 
     def findChange(self):
         self.lbl_progress.setText(u"변경 탐지중...")
@@ -271,6 +312,13 @@ class WidgetInspect(QWidget, Ui_Form):
         else:
             QMessageBox.information(self, u"탐지결과", u"변경된 데이터가 없습니다.")
             self.lbl_progress.setText(u"변경 사항 없음")
+
+    def deleteInspectData(self):
+        cur = self.plugin.conn.cursor()
+        sql = u"delete from extjob.inspect_objlist where inspect_id = '{}'" \
+              .format(self.inspect_id)
+        cur.execute(sql)
+        self.plugin.conn.commit()
 
     def hdrClickBtnNext(self):
         self.iterCurrentObj(True)
@@ -419,8 +467,6 @@ class WidgetInspect(QWidget, Ui_Form):
     def findDiff(self):
         try:
             # 외주 정보를 통해서 view를 만듦
-            self.layer_nm = self.cmb_layer_nm.currentText()
-
             self.sql_rep = open(os.path.join(os.path.dirname(__file__), "conf", "sql_rep.txt"), 'a')
             self.sql_rep.write(u'data : {} , inspect_id : {} , layer_nm : {} \n\n'
                                .format(str(QDate.currentDate()), self.inspect_id, self.layer_nm))
@@ -436,21 +482,7 @@ class WidgetInspect(QWidget, Ui_Form):
             cur.execute(sql)
 
             # 검사하려는 테이블의 칼럼을 shp list로 만듦
-            sql = "select column_name from information_schema.columns " \
-                  "where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(self.layer_nm)
-            cur.execute(sql)
-            column_nm = []
-            results = cur.fetchall()
-
-            for list in results:
-                column_nm.append(list[0])
-
-            column_nm.remove('ogc_fid')
-            column_nm.remove('wkb_geometry')
-
-            self.column_sql = ','.join(column_nm)
-
-            self.id_column = column_nm[0]
+            self.makeColumnSql()
 
             # 테이블의 geometry를 가져옴
             sql = u"select GeometryType(wkb_geometry) from nfsd.{} limit 1".format(self.layer_nm)
@@ -502,6 +534,25 @@ class WidgetInspect(QWidget, Ui_Form):
                 self.plugin.conn.commit()
 
             QMessageBox.warning(self, u"오류", str(e))
+
+    def makeColumnSql(self):
+        cur = self.plugin.conn.cursor()
+        sql = "select column_name from information_schema.columns " \
+              "where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(self.layer_nm)
+
+        cur.execute(sql)
+        column_nm = []
+        results = cur.fetchall()
+
+        for list in results:
+            column_nm.append(list[0])
+
+        column_nm.remove('ogc_fid')
+        column_nm.remove('wkb_geometry')
+
+        self.column_sql = ','.join(column_nm)
+
+        self.id_column = column_nm[0]
 
     def findSame(self):
         cur = self.plugin.conn.cursor()
@@ -651,6 +702,10 @@ class WidgetInspect(QWidget, Ui_Form):
         cur.execute(sql)
 
     def addLayers(self):
+
+        if self.column_sql is None:
+            self.makeColumnSql()
+
         QgsMapLayerRegistry.instance().removeAllMapLayers()
         # TODO: 처음 초기화 됐을때는 ?!
         # if self.maintain_data != None and self.diff_data != None:
@@ -761,7 +816,6 @@ class WidgetInspect(QWidget, Ui_Form):
         self.inspect_id = result[0]
         self.inspect_dttm = result[1]
 
-        self.receive_id =  self.cmb_receive_id.currentText()
         self.extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
         self.inspecter = self.edt_inpector.text()
 
@@ -770,9 +824,10 @@ class WidgetInspect(QWidget, Ui_Form):
         #       u"VALUES ('{}','{}','{}','{}','{}')"\
         #     .format(self.inspect_id, self.extjob_id, self.receive_id, inspect_dttm, self.inspecter)
         # cur.execute(sql)
-        sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm) " \
-              u"VALUES (%s, %s, %s, %s, %s)"
-        cur.execute(sql, (self.inspect_id, self.extjob_id, self.receive_id, self.inspect_dttm, self.inspecter))
+        sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm, layer_nm)"\
+              u"VALUES (%s, %s, %s, %s, %s, %s)"
+        cur.execute(sql, (self.inspect_id, self.extjob_id, self.receive_id, self.inspect_dttm,
+                                                                                        self.inspecter,self.layer_nm))
 
         self.plugin.conn.commit()
 
