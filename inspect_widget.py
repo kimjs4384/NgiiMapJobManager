@@ -68,8 +68,9 @@ class WidgetInspect(QWidget, Ui_Form):
         self.setInitValue()
         self.connectFct()
 
-        if self.plugin.dlgReceive != None and self.plugin.dlgReceive.isVisible():
-            extjob_id = self.plugin.dlgReceive.cmb_extjob_nm.itemData(self.plugin.dlgReceive.cmb_extjob_nm.currentIndex())
+        if self.plugin.dlgReceive is not None and self.plugin.dlgReceive.isVisible():
+            extjob_id = self.plugin.dlgReceive.cmb_extjob_nm.itemData(
+                                                                    self.plugin.dlgReceive.cmb_extjob_nm.currentIndex())
             if extjob_id != None and extjob_id != "":
                 self.setDefaultInfo(extjob_id)
 
@@ -248,6 +249,9 @@ class WidgetInspect(QWidget, Ui_Form):
                 self.btn_prev.setDisabled(False)
                 self.btn_reject.setDisabled(False)
                 self.btn_make_report.setDisabled(False)
+
+                self.extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
+
                 # 변화정보 양을 세서 보여줌
                 self.countDiffFeature()
                 self.addLayers()
@@ -264,13 +268,14 @@ class WidgetInspect(QWidget, Ui_Form):
             self.receive_id = self.cmb_receive_id.currentText()
             self.layer_nm = self.cmb_layer_nm.currentText()
 
-            sql = u"select inspect_id from extjob.inspect_main where receive_id ='{}' " \
+            sql = u"select inspect_id,start_dttm from extjob.inspect_main where receive_id ='{}' " \
                   u"and layer_nm = '{}' order by start_dttm desc".format(self.receive_id,self.layer_nm)
             cur.execute(sql)
             results = cur.fetchall()
 
             if len(results) > 0:
                 self.inspect_id = results[0][0]
+                self.inspect_dttm = results[0][1]
                 rc = QMessageBox.question(self, u"주의", u"검수 기록이 존재하는 데이터입니다.\n"
                                                        u"다시 검수하시겠습니까?"
                                           , QMessageBox.Yes, QMessageBox.No)
@@ -456,7 +461,8 @@ class WidgetInspect(QWidget, Ui_Form):
 
         # 거부시 화면 저장
         obj_id = crrFeature['id']
-        image_path = os.path.join(self.plugin.plugin_dir, u"report_template", "word/media/image{}.png".format(100 + obj_id))
+        image_path = os.path.join(self.plugin.plugin_dir, u"report_template",
+                                                                        "word/media/image{}.png".format(100 + obj_id))
         canvas = self.plugin.iface.mapCanvas()
         canvas.saveAsImage(image_path)
 
@@ -572,12 +578,14 @@ class WidgetInspect(QWidget, Ui_Form):
               u"inner join (select {0},st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
               u"as mbr_hash_12 from extjob.{3}_{2}) as e on (o.*) = (e.*))," \
               u"origin as (select o.ogc_fid as origin_ogc_fid, a.{4} from same_data as a " \
-              u"inner join (select ogc_fid, {4},st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
+              u"inner join (select ogc_fid, {4}," \
+              u"st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
               u"as mbr_hash_12 from extjob.{2}_view) as o on a.{4} = o.{4} and a.mbr_hash_12 = o.mbr_hash_12 )," \
               u"receive as (select o.ogc_fid as receive_ogc_fid, a.{4} from same_data as a " \
-              u"inner join (select ogc_fid, {4},st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
+              u"inner join (select ogc_fid, {4}," \
+              u"st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
               u"as mbr_hash_12 from extjob.{3}_{2}) as o on a.{4} = o.{4} and a.mbr_hash_12 = o.mbr_hash_12 ) " \
-              u"insert into extjob.inspect_objlist( inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )" \
+              u"insert into extjob.inspect_objlist( inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )"\
               u"select '{5}' as inspect_id, '{2}' as layer_nm, origin_ogc_fid, receive_ogc_fid, " \
               u"'s' as mod_type from origin, receive where origin.{4} = receive.{4}"\
             .format(self.column_sql,self.geohash_sql,self.layer_nm,
@@ -663,7 +671,7 @@ class WidgetInspect(QWidget, Ui_Form):
                   u"em as (select {0}, {1} from extjob.{4}_{3} except select * from same ), " \
                   u"geometry as ( select mbr_hash_12 from ( select om.* from om " \
                   u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 ) as t) " \
-                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid,receive_ogc_fid,mod_type) "\
                   u"select '{2}' as inspect_id, '{3}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
                   u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12 from geometry " \
                   u"inner join (select ogc_fid, {1} from extjob.{3}_view ) as o " \
@@ -702,9 +710,7 @@ class WidgetInspect(QWidget, Ui_Form):
         cur.execute(sql)
 
     def addLayers(self):
-
-        if self.column_sql is None:
-            self.makeColumnSql()
+        self.makeColumnSql()
 
         QgsMapLayerRegistry.instance().removeAllMapLayers()
         # TODO: 처음 초기화 됐을때는 ?!
@@ -800,6 +806,10 @@ class WidgetInspect(QWidget, Ui_Form):
         self.numTotal = len(self.inspectList)
         self.numProcessed = 0
 
+        for feature in self.inspectList:
+            if feature['inspect_res'] == 'accept' or feature['inspect_res'] == 'reject':
+                self.numProcessed += 1
+
         # 변경된 데이터가 없을 경우
         if self.numTotal <= 0:
             return
@@ -810,7 +820,7 @@ class WidgetInspect(QWidget, Ui_Form):
     def insertInspectInfo(self):
         # 검수ID, 검수 날짜 생성
         cur = self.plugin.conn.cursor()
-        sql = u"SELECT nextid('AD') as extjob_id, current_timestamp as mapext_dttm"
+        sql = u"SELECT nextid('AD') as inspect_id, current_timestamp as inspect_dttm"
         cur.execute(sql)
         result = cur.fetchone()
         self.inspect_id = result[0]
@@ -870,7 +880,7 @@ class WidgetInspect(QWidget, Ui_Form):
     def hdrClickBtnMakeReport(self):
         if self.numTotal != self.numProcessed:
             rc = QMessageBox.question(self, u"확인", u"아직 검수하지 않은 객체가 {}개 있습니다.\n"
-                                                   u"그래도 검수 리포트를 작성하시겠습니까?".format(self.numTotal-self.numProcessed)
+                                                u"그래도 검수 리포트를 작성하시겠습니까?".format(self.numTotal-self.numProcessed)
                                       , QMessageBox.Yes, QMessageBox.No)
             if rc != QMessageBox.Yes:
                 return
@@ -891,6 +901,7 @@ class WidgetInspect(QWidget, Ui_Form):
             else:
                 numMiss += 1
 
+        # TODO: 검수자명 / 업체명이 안바뀜
         # WORD 문서 생성
         extjob_nm = self.cmb_extjob_nm.currentText()
         extjob_id = self.extjob_id
@@ -914,10 +925,20 @@ class WidgetInspect(QWidget, Ui_Form):
         final_result = u"검수통과" if (num_reject<=0 and num_miss<=0) else u"보완후 재검수"
         fileFilter = "MS Word Files (*.docx)"
         crrTime = time.localtime()
-        # TODO: 레포트 경로 저장되게 수정
-        defFileName = u"/temp/{}_{}.docx".format(extjob_nm, time.strftime("%Y%m%d", crrTime))
+
+        conf = ConfigParser.SafeConfigParser()
+        conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
+
+        folderPath = conf.get("Dir_Info", "report_dir")
+
+        defFileName = u"{}_{}.docx".format(extjob_nm, time.strftime("%Y%m%d", crrTime))
         fileName = QFileDialog.getSaveFileName(self.plugin.iface.mainWindow(),
-            u'레포트 파일명을 입력해 주세요.', defFileName, fileFilter)
+            u'레포트 파일명을 입력해 주세요.', os.path.join(folderPath,defFileName), fileFilter)
+
+        with open(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"), "w") as confFile:
+            conf.set("Dir_Info", "report_dir", os.path.dirname(fileName))
+            conf.write(confFile)
+
         if not fileName:
             return
 
@@ -983,14 +1004,18 @@ class WidgetInspect(QWidget, Ui_Form):
                 word_document = word_document.replace(u'<!--{{num_reject}}-->', str(num_reject))
                 word_document = word_document.replace(u'<!--{{num_miss}}-->', str(num_miss))
                 word_document = word_document.replace(u'<!--{{final_result}}-->', final_result)
-
                 # 거부 객체 리포트
                 img_id_list = []
                 i_rg_start = word_document.find('<!--%start for rejects%-->')
                 i_rg_end = word_document.find('<!--%end for rejects%-->', i_rg_start) + len('<!--%end for rejects%-->')
 
                 if num_reject <= 0:  # 거부된 객체가 없는 경우
-                    message = u'<w:p w:rsidR="00361A42" w:rsidRDefault="00D92755" w:rsidP="008A6D62"><w:pPr><w:pStyle w:val="20"/><w:rPr><w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕" w:cstheme="minorBidi"/><w:sz w:val="18"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕"/><w:sz w:val="22"/></w:rPr><w:t>거부된 객체가 없습니다.</w:t></w:r></w:p>'
+                    message = u'<w:p w:rsidR="00361A42" w:rsidRDefault="00D92755" w:rsidP="008A6D62">' \
+                        u'<w:pPr><w:pStyle w:val="20"/><w:rPr>' \
+                        u'<w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕" w:cstheme="minorBidi"/>'\
+                        u'<w:sz w:val="18"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr>' \
+                        u'<w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕"/><w:sz w:val="22"/>' \
+                        u'</w:rPr><w:t>거부된 객체가 없습니다.</w:t></w:r></w:p>'
                     word_document = word_document[:i_rg_start-1] + message + word_document[i_rg_end+1:]
                 else: # 거부된 객체가 있는 경우
                     reject_rpt_tmpl = word_document[i_rg_start:i_rg_end]
