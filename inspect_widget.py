@@ -257,6 +257,11 @@ class WidgetInspect(QWidget, Ui_Form):
                 self.addLayers()
 
         elif res == 2:
+            rc = QMessageBox.question(self, u"확인", u"변경탐지를 시작하시겠습니까?",
+                                      QMessageBox.Yes, QMessageBox.No)
+            if rc != QMessageBox.Yes:
+                return
+
             self.findChange()
         else:
             return
