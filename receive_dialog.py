@@ -107,7 +107,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
         # 수령 데이터 import
         receive_id = self.importRecData()
-        if  receive_id != None and receive_id != '':
+        if receive_id is not None and receive_id != '':
             # TODO: 시연을 위한 코드이므로 제거 필요
             for i in range(10):
                 progress = i * 10
@@ -119,6 +119,9 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
             msg = u'납품 데이터 올리기가 완료되었습니다.\n' \
                   u'수령 ID : {}'.format(receive_id)
+            if self.failLayer != u'':
+                msg += u'\n\n실패한 데이터 입니다.\n{}'.format(self.failLayer)
+
             QMessageBox.information(self, u"작업완료", msg)
 
         self.progressBar.hide()
@@ -216,6 +219,9 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 QMessageBox.warning(self, u"오류", u"폴더를 선택해 주시기 바랍니다")
                 return
 
+            self.failLayer = u""
+            self.passLayer = u""
+
             # 수령ID, 수령 날짜 생성
             cur = self.conn.cursor()
             sql = "SELECT nextid('RD') as receive_id, current_timestamp as mapext_dttm"
@@ -233,6 +239,10 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     layer_nm = os.path.splitext(fileName)[0]
                     table_nm = receive_id + "_" + layer_nm
                     shp_path = os.path.join(self.edt_data_folder.text(),fileName)
+
+                    # 받은 적이 있는 레이어 인지 체크 extjob_id + layer_nm
+                    if not self.checkReceive(layer_nm):
+                        continue
 
                     if not self.checkColumns(fileName):
                         continue
@@ -370,7 +380,10 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
             res = cur.fetchone()
 
             if res[0] <= 0:
-                QMessageBox.information(self,u'작업완료',u'납품된 데이터가 없습니다.')
+                msg = u'납품된 데이터가 없습니다.'
+                if self.failLayer != u'':
+                    msg += u'\n\n실패한 데이터 입니다.\n{}'.format(self.failLayer)
+                QMessageBox.information(self,u'작업완료',msg)
                 return
 
             self.conn.commit()
@@ -384,58 +397,95 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
             return
 
     def checkColumns(self,fileName):
-        cur = self.plugin.conn.cursor()
-        sql = u''
-        check_res = []
+        try:
+            cur = self.plugin.conn.cursor()
+            sql = u''
+            check_res = []
 
-        if os.path.splitext(fileName)[1] == '.shp':
-            field_list = set([])
-            column_list = set([])
-            layer_nm = os.path.splitext(fileName)[0]
+            if os.path.splitext(fileName)[1] == '.shp':
+                field_list = set([])
+                column_list = set([])
+                layer_nm = os.path.splitext(fileName)[0]
 
-            # 기본 칼럼 ( 마스터 디비에 있는 칼럼 ) 가져오기
-            sql = u"select column_name from information_schema.columns " \
-                  u"where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(layer_nm)
-            cur.execute(sql)
-            results = cur.fetchall()
-            for result in results:
-                column_list.add(result[0])
+                # 기본 칼럼 ( 마스터 디비에 있는 칼럼 ) 가져오기
+                sql = u"select column_name from information_schema.columns " \
+                    u"where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(layer_nm)
+                cur.execute(sql)
+                results = cur.fetchall()
+                for result in results:
+                    column_list.add(result[0])
 
-            if len(column_list) == 0:
-                QMessageBox.warning(self, u"경고", u"{} 파일은 표준에 없는 레이어이기에 무시됩니다.".format(fileName))
+                if len(column_list) == 0:
+                    QMessageBox.warning(self, u"경고", u"{} 파일은 표준에 없는 레이어이기에 무시됩니다.".format(fileName))
+                    return False
+
+                column_list.remove('ogc_fid')
+                column_list.remove('wkb_geometry')
+
+                # shp의 필드명 가져오기
+                shp = os.path.join(self.edt_data_folder.text(), fileName)
+                data = ogr.Open(shp)
+                layer = data.GetLayer(0)
+                layer_de = layer.GetLayerDefn()
+
+                for i in range(layer_de.GetFieldCount()):
+                    field_list.add(layer_de.GetFieldDefn(i).GetName())
+
+                # 칼럼 체크하기
+                check = column_list.difference(field_list)
+
+                if len(check) != 0:
+                    print list(check)
+                    check_res.append({'file_nm': layer_nm, 'fields': list(check)})
+
+            if len(check_res) != 0:
+                msg = u''
+                for res in check_res:
+                    file_nm = res['file_nm']
+                    fields = []
+                    for col in res['fields']:
+                        fields.append(col)
+                    omit_field = ','.join(fields)
+                    msg += u'파일명 : {}\n- 누락된 칼럼 : {}\n\n'.format(file_nm, omit_field)
+
+                QMessageBox.error(self, u"오류", msg)
+
                 return False
 
-            column_list.remove('ogc_fid')
-            column_list.remove('wkb_geometry')
+            return True
 
-            # shp의 필드명 가져오기
-            shp = os.path.join(self.edt_data_folder.text(), fileName)
-            data = ogr.Open(shp)
-            layer = data.GetLayer(0)
-            layer_de = layer.GetLayerDefn()
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", u"extjob_id를 검사하던 중 에러가 발생했습니다.\n{}".format(e))
 
-            for i in range(layer_de.GetFieldCount()):
-                field_list.add(layer_de.GetFieldDefn(i).GetName())
+    def checkReceive(self,layer_nm):
+        try:
+            cur = self.plugin.conn.cursor()
 
-            # 칼럼 체크하기
-            check = column_list.difference(field_list)
+            # 레이어가 있는지 먼저 체크
+            sql = u"select count(*) from pg_tables where schemaname = 'nfsd' and tablename = '{}'".format(layer_nm)
+            cur.execute(sql)
+            result = cur.fetchone()
 
-            if len(check) != 0:
-                print list(check)
-                check_res.append({'file_nm': layer_nm, 'fields': list(check)})
+            if result[0] <= 0:
+                QMessageBox.warning(self, u"경고", u"{}.shp 파일은 표준에 없는 레이어이기에 무시됩니다.".format(layer_nm))
+                self.failLayer += u"{}.shp\n".format(layer_nm)
+                return False
 
-        if len(check_res) != 0:
-            msg = u''
-            for res in check_res:
-                file_nm = res['file_nm']
-                fields = []
-                for col in res['fields']:
-                    fields.append(col)
-                omit_field = ','.join(fields)
-                msg += u'파일명 : {}\n- 누락된 칼럼 : {}\n\n'.format(file_nm, omit_field)
+            # 외주ID 와 레이어명을 통해서 이전에 받은 기록을 검사
+            extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
 
-            QMessageBox.error(self, u"오류", msg)
+            sql = u"select count(*) from extjob.receive_main where extjob_id = '{}' and layer_nm = '{}'"\
+                .format(extjob_id,layer_nm)
+            cur.execute(sql)
+            result = cur.fetchone()
 
-            return False
+            if result[0] > 0:
+                QMessageBox.warning(self, u"경고", u"{}.shp 파일은 이미 납품받은 레이어이기 때문에 다음 레이어로 넘어 갑니다."
+                                    .format(layer_nm))
+                self.passLayer += u"{}.shp\n".format(layer_nm)
+                return False
 
-        return True
+            return True
+
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", u"레이어 중복 검사 중 에러가 발생했습니다\n{}".format(e))
