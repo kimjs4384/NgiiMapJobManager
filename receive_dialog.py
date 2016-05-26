@@ -242,7 +242,8 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     shp_path = os.path.join(self.edt_data_folder.text(),fileName)
 
                     # 파일명 검사
-                    self.checkFileName(layer_nm)
+                    if not self.checkFileName(layer_nm):
+                        continue
 
                     # 받은 적이 있는 레이어 인지 체크 extjob_id + layer_nm
                     ResCheckReceive = self.checkReceive(layer_nm)
