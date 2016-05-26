@@ -188,15 +188,12 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def refreshUI(self):
         if self.btn_start_inspect.isVisible() == False:
-            # TODO: 이전에 변경 탐지에 대한 정보는 어떻게
             self.btn_start_inspect.setVisible(True)
             self.btn_accept.setDisabled(True)
             self.btn_next.setDisabled(True)
             self.btn_prev.setDisabled(True)
             self.btn_reject.setDisabled(True)
             self.btn_make_report.setDisabled(True)
-
-            self.inspectList
 
             self.progressBar.hide()
             self.lbl_progress.hide()
@@ -417,15 +414,20 @@ class WidgetInspect(QWidget, Ui_Form):
                                                     mod_type_txt, insp_stat_txt)
         self.lbl_progress.setText(message)
 
+        canvas = self.plugin.iface.mapCanvas()
+
         geom = crrFeature.geometry()
         bound = geom.boundingBox()
-        canvas = self.plugin.iface.mapCanvas()
         canvas.setExtent(bound)
 
         feature_id = crrFeature.id()
         self.diff_data.setSelectedFeatures([feature_id])
 
-        canvas.zoomOut()
+        if self.diff_data.geometryType() == QGis.Point:
+            canvas.zoomScale(2000)
+        else:
+            canvas.zoomOut()
+
         canvas.refresh()
 
     def hdrClickBtnAccept(self):
@@ -856,6 +858,9 @@ class WidgetInspect(QWidget, Ui_Form):
 
         # 변경된 데이터가 없을 경우
         if self.numTotal <= 0:
+            canvas = self.plugin.iface.mapCanvas()
+            canvas.setExtent(self.maintain_data.extent())
+            canvas.refresh()
             return
 
         # 첫번째 객체로 가기
@@ -1121,11 +1126,14 @@ class WidgetInspect(QWidget, Ui_Form):
 
             QMessageBox.information(self, u"작업완료", u"검수 레포트 작성이 완료되었습니다.")
 
-            cur = self.plugin.conn.cursor()
-            sql = u"update extjob.inspect_main set report_dttm = '{}' where inspect_id = '{}'"\
-                                                .format(time.strftime("%Y-%m-%d %H:%M:%S", crrTime), self.inspect_id)
-            cur.execute(sql)
-            self.plugin.conn.commit()
+            if os.path.exists(fileName):
+                cur = self.plugin.conn.cursor()
+                sql = u"update extjob.inspect_main set report_dttm = '{}' where inspect_id = '{}'"\
+                                                    .format(time.strftime("%Y-%m-%d %H:%M:%S", crrTime), self.inspect_id)
+                cur.execute(sql)
+                self.plugin.conn.commit()
+
+                self.cmb_layer_nm.setItemData(self.cmb_layer_nm.findText(layer_nm), QColor('red'), Qt.TextColorRole)
 
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"레포트 작성중 오류가 발생하였습니다.\n{}".format(e))
