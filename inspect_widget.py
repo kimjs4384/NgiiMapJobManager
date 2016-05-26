@@ -218,9 +218,25 @@ class WidgetInspect(QWidget, Ui_Form):
         results = cur.fetchall()
 
         self.cmb_layer_nm.addItem('')
+
+        sql = u"select tablename from pg_tables where schemaname = 'extjob' and tablename = %s"
+        sql_2 = u"select report_dttm from extjob.inspect_main where receive_id = %s " \
+              u"and layer_nm = %s order by start_dttm desc"
         for result in results:
-            self.cmb_layer_nm.addItem(result[0])
-            self.receive_dttm = result[1]
+            # 실제 테이블이 존재하는지 체크
+            cur.execute(sql,(u"{}_{}".format(self.receive_id.lower(),result[0]),))
+            tableCount = cur.fetchall()
+            if len(tableCount) != 0:
+                self.cmb_layer_nm.addItem(result[0])
+                self.receive_dttm = result[1]
+
+                cur.execute(sql_2, (self.receive_id, result[0]))
+                checkRep = cur.fetchall()
+
+                if len(checkRep) > 0:
+                    if checkRep[0][0] != NULL:
+                        self.cmb_layer_nm.setItemData(
+                                                self.cmb_layer_nm.findText(result[0]),QColor('red'),Qt.TextColorRole)
 
     def hdrClickBtnStartInspect(self):
         if self.cmb_layer_nm.currentText() == "":
@@ -289,15 +305,16 @@ class WidgetInspect(QWidget, Ui_Form):
             if len(results) > 0:
                 self.inspect_id = results[0][0]
                 self.inspect_dttm = results[0][1]
+
                 rc = QMessageBox.question(self, u"주의", u"검수 기록이 존재하는 데이터입니다.\n\n"
-                                                       u"다시 검수하시겠습니까?"
-                                          , QMessageBox.Yes, QMessageBox.No)
+                                                       u"다시 검수하시겠습니까?" , QMessageBox.Yes, QMessageBox.No)
                 if rc == QMessageBox.Yes:
                     # 새로운 검수
                     return 1
                 else:
                     # 취소
                     return 0
+
             # 바로 변화탐지
             return 2
 
