@@ -26,6 +26,7 @@ import os
 from PyQt4 import QtGui, uic
 from PyQt4.QtGui import *
 from PyQt4.QtCore import *
+from qgis.core import *
 import psycopg2
 import time
 from subprocess import check_output
@@ -77,7 +78,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.lbl_progress.hide()
 
         self.btn_upload.setDisabled(False)
-        self.btn_inspectbtn_inspect.setDisabled(True)
+        self.btn_inspect.setDisabled(True)
 
     def hdrClickBtnSearch(self):
         self.cmb_extjob_nm.clear()
@@ -245,8 +246,19 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                         continue
 
                     # 받은 적이 있는 레이어 인지 체크 extjob_id + layer_nm
-                    if not self.checkReceive(layer_nm):
+                    ResCheckReceive = self.checkReceive(layer_nm)
+                    if  ResCheckReceive == 0:
+                        QMessageBox.warning(self, u"경고", u"{}.shp 파일은 이미 납품받은 레이어이기 때문에 다음 레이어로 넘어 갑니다."
+                                            .format(layer_nm))
+                        self.passLayer += u"- {}.shp\n".format(layer_nm)
                         continue
+
+                    elif ResCheckReceive == 2:
+                        rc = QMessageBox.question(self, u"주의", u"레이어명 : {}\n검수 이력이 있는 데이터입니다.\n"
+                                                               u"다시 데이터를 납품하시겠습니다?".format(layer_nm)
+                                                                        , QMessageBox.Yes, QMessageBox.No)
+                        if rc != QMessageBox.Yes:
+                            continue
 
                     if not self.checkColumns(fileName):
                         continue
@@ -505,21 +517,30 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         try:
             cur = self.plugin.conn.cursor()
 
-            # 외주ID 와 레이어명을 통해서 이전에 받은 기록을 검사
+            # 외주ID 와 레이어명을 통해서 이전에 받은 기록을 검사 + 검수 기록 검사
             extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
 
-            sql = u"select count(*) from extjob.receive_main where extjob_id = '{}' and layer_nm = '{}'"\
-                .format(extjob_id,layer_nm)
+            sql = u"select receive_id from extjob.receive_main where extjob_id = '{}' and layer_nm = '{}' " \
+                  u"order by receive_dttm desc".format(extjob_id,layer_nm)
             cur.execute(sql)
-            result = cur.fetchone()
+            dataResult = cur.fetchall()
 
-            if result[0] > 0:
-                QMessageBox.warning(self, u"경고", u"{}.shp 파일은 이미 납품받은 레이어이기 때문에 다음 레이어로 넘어 갑니다."
-                                    .format(layer_nm))
-                self.passLayer += u"- {}.shp\n".format(layer_nm)
-                return False
+            sql = u"select report_dttm from extjob.inspect_main " \
+                  u"where extjob_id = %s and layer_nm = %s and receive_id = %s order by start_dttm desc"
 
-            return True
+            if len(dataResult) > 0:
+                cur.execute(sql,(extjob_id,layer_nm,dataResult[0][0]))
+                reportResult = cur.fetchall()
+
+                if len(reportResult) == 0:
+                    return 0
+                else:
+                    if reportResult[0][0] == NULL:
+                        return 0
+                    else:
+                        return 2
+
+            return 1
 
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"레이어 중복 검사 중 에러가 발생했습니다\n{}".format(e))
