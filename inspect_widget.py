@@ -234,10 +234,18 @@ class WidgetInspect(QWidget, Ui_Form):
         # 검수 결과가 있는지 체크
         res = self.checkInspect()
         if res == 1:
-            rc = QMessageBox.question(self, u"확인", u"변화탐지를 다시 하시겠습니까?\n"
+            rc = QMessageBox.question(self, u"확인", u"변화탐지를 다시 하시겠습니까?\n\n"
                                                    u"다시 할 경우 기존의 데이터는 삭제 됩니다.",
                                       QMessageBox.Yes, QMessageBox.No)
             if rc == QMessageBox.Yes:
+                if not self.checkReport():
+                    rc = QMessageBox.question(self, u"확인", u"해당 레이어의 이전 검수에 대한\n"
+                                                           u"검수 결과 레포트가 없습니다.\n\n"
+                                                           u"그래도 계속 진행하시겠습니까?",
+                                              QMessageBox.Yes, QMessageBox.No)
+                    if rc != QMessageBox.Yes:
+                        return
+
                 self.deleteInspectData()
                 self.findChange()
             else:
@@ -281,7 +289,7 @@ class WidgetInspect(QWidget, Ui_Form):
             if len(results) > 0:
                 self.inspect_id = results[0][0]
                 self.inspect_dttm = results[0][1]
-                rc = QMessageBox.question(self, u"주의", u"검수 기록이 존재하는 데이터입니다.\n"
+                rc = QMessageBox.question(self, u"주의", u"검수 기록이 존재하는 데이터입니다.\n\n"
                                                        u"다시 검수하시겠습니까?"
                                           , QMessageBox.Yes, QMessageBox.No)
                 if rc == QMessageBox.Yes:
@@ -322,6 +330,20 @@ class WidgetInspect(QWidget, Ui_Form):
         else:
             QMessageBox.information(self, u"탐지결과", u"변경된 데이터가 없습니다.")
             self.lbl_progress.setText(u"변경 사항 없음")
+
+    def checkReport(self):
+        cur = self.plugin.conn.cursor()
+        sql = u"select report_dttm from extjob.inspect_main where inspect_id = '{}'" \
+            .format(self.inspect_id)
+        cur.execute(sql)
+
+        result = cur.fetchone()
+
+        # 리포트 기록이 있을 경우
+        if result[0] != NULL:
+            return True
+
+        return False
 
     def deleteInspectData(self):
         cur = self.plugin.conn.cursor()
@@ -1081,6 +1103,13 @@ class WidgetInspect(QWidget, Ui_Form):
                 zf.write("word/_rels/document.xml.rels")
 
             QMessageBox.information(self, u"작업완료", u"검수 레포트 작성이 완료되었습니다.")
+
+            cur = self.plugin.conn.cursor()
+            sql = u"update extjob.inspect_main set report_dttm = '{}' where inspect_id = '{}'"\
+                                                .format(time.strftime("%Y-%m-%d %H:%M:%S", crrTime), self.inspect_id)
+            cur.execute(sql)
+            self.plugin.conn.commit()
+
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"레포트 작성중 오류가 발생하였습니다.\n{}".format(e))
 
@@ -1127,13 +1156,22 @@ class WidgetInspect(QWidget, Ui_Form):
                 field_names.remove(u'inspect_res')
                 field_names.remove(u'reject_reason')
 
-                originFeature = None
+                features = []
                 if crrFeature['origin_ogc_fid'] != 0 and crrFeature['receive_ogc_fid'] != 0:
                     request = QgsFeatureRequest().setFilterExpression(u'"origin_ogc_fid" = \'{}\''
                                                                       .format(crrFeature['origin_ogc_fid']))
                     originFeatures = self.maintain_data.getFeatures(request)
                     for feature in originFeatures:
-                        originFeature = feature
+                        features.append(feature)
+
+                originFeature = None
+                if len(features) == 1:
+                    originFeature = features[0]
+                elif len(features) == 0:
+                    pass
+                else:
+                    QMessageBox.warning(self, u"오류", u"변화없음 레이어에 중복된 데이터가 있습니다.")
+                    return
 
                 for i in range(0,len(field_names)):
                     dlgObjlist[i][0].setText(field_names[i])
@@ -1150,5 +1188,7 @@ class WidgetInspect(QWidget, Ui_Form):
                     dlgObjlist[i][0].setVisible(False)
                     dlgObjlist[i][1].setVisible(False)
                     dlgObjlist[i][2].setVisible(False)
+
+
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"속성 뷰어에 문제가 발생했습니다.\n{}".format(e))
