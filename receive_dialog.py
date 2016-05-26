@@ -241,9 +241,8 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     table_nm = receive_id + "_" + layer_nm
                     shp_path = os.path.join(self.edt_data_folder.text(),fileName)
 
-                    # 기본 파일 검사
-                    if not self.checkExtjobFile(layer_nm):
-                        continue
+                    # 파일명 검사
+                    self.checkFileName(layer_nm)
 
                     # 받은 적이 있는 레이어 인지 체크 extjob_id + layer_nm
                     ResCheckReceive = self.checkReceive(layer_nm)
@@ -260,6 +259,11 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                         if rc != QMessageBox.Yes:
                             continue
 
+                    # 기본 파일 검사
+                    if not self.checkExtjobFile(layer_nm):
+                        continue
+
+                    # 필수(기본) 칼럼 검사
                     if not self.checkColumns(fileName):
                         continue
 
@@ -431,10 +435,6 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 for result in results:
                     column_list.add(result[0])
 
-                if len(column_list) == 0:
-                    QMessageBox.warning(self, u"경고", u"{} 파일은 표준에 없는 레이어이기에 무시됩니다.".format(fileName))
-                    return False
-
                 column_list.remove('ogc_fid')
                 column_list.remove('wkb_geometry')
 
@@ -462,10 +462,11 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     for col in res['fields']:
                         fields.append(col)
                     omit_field = ','.join(fields)
-                    msg += u'파일명 : {}\n- 누락된 칼럼 : {}\n\n'.format(file_nm, omit_field)
+                    msg += u'파일명 : {}\n - 누락된 칼럼 : {}\n\n'.format(file_nm, omit_field)
 
                 QMessageBox.error(self, u"오류", msg)
 
+                self.failLayer += u"- {}.shp (칼럼누락)\n".format(layer_nm)
                 return False
 
             return True
@@ -476,16 +477,6 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
     def checkExtjobFile(self,layer_nm):
         try:
             cur = self.plugin.conn.cursor()
-
-            # 레이어가 있는지 먼저 체크
-            sql = u"select count(*) from pg_tables where schemaname = 'nfsd' and tablename = '{}'".format(layer_nm)
-            cur.execute(sql)
-            result = cur.fetchone()
-
-            if result[0] <= 0:
-                QMessageBox.warning(self, u"경고", u"{}.shp 파일은 표준에 없는 레이어이기에 무시됩니다.".format(layer_nm))
-                self.failLayer += u"- {}.shp (비표준)\n".format(layer_nm)
-                return False
 
             # .cpg .dbf .prj .shx 파일 확인
             omitFile = u''
@@ -512,6 +503,21 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"파일 검사 중 에러가 발생했습니다\n{}".format(e))
+
+    def checkFileName(self,layer_nm):
+        cur = self.plugin.conn.cursor()
+
+        # 레이어가 있는지 먼저 체크
+        sql = u"select count(*) from pg_tables where schemaname = 'nfsd' and tablename = '{}'".format(layer_nm)
+        cur.execute(sql)
+        result = cur.fetchone()
+
+        if result[0] <= 0:
+            QMessageBox.warning(self, u"경고", u"{}.shp 파일은 표준에 없는 레이어이기에 무시됩니다.".format(layer_nm))
+            self.failLayer += u"- {}.shp (비표준)\n".format(layer_nm)
+            return False
+
+        return True
 
     def checkReceive(self,layer_nm):
         try:
