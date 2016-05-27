@@ -164,7 +164,7 @@ class WidgetInspect(QWidget, Ui_Form):
                 basedata_dt = result[2]
                 self.cmb_extjob_nm.addItem(extjob_nm)
                 self.cmb_extjob_nm.setItemData(self.cmb_extjob_nm.count()-1, extjob_id)
-                self.date_basedata_dt.setDate(basedata_dt)
+                self.date_basedata_dt.setDate(QDate.fromString(basedata_dt.isoformat(),'yyyy-MM-dd'))
 
             sel_extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
             sql = u"select receive_id from (select * from extjob.receive_main where extjob_id = '{}') as ext " \
@@ -217,7 +217,7 @@ class WidgetInspect(QWidget, Ui_Form):
         self.cmb_layer_nm.addItem('')
 
         sql = u"select tablename from pg_tables where schemaname = 'extjob' and tablename = %s"
-        sql_2 = u"select report_dttm from extjob.inspect_main where receive_id = %s " \
+        sql_2 = u"select inspect_res from extjob.inspect_main where receive_id = %s " \
               u"and layer_nm = %s order by start_dttm desc"
         for result in results:
             # 실제 테이블이 존재하는지 체크
@@ -231,9 +231,12 @@ class WidgetInspect(QWidget, Ui_Form):
                 checkRep = cur.fetchall()
 
                 if len(checkRep) > 0:
-                    if checkRep[0][0] != NULL:
+                    if checkRep[0][0] == 'r':
                         self.cmb_layer_nm.setItemData(
                                                 self.cmb_layer_nm.findText(result[0]),QColor('red'),Qt.TextColorRole)
+                    elif checkRep[0][0] != NULL:
+                        self.cmb_layer_nm.setItemData(
+                                                self.cmb_layer_nm.findText(result[0]), QColor('blue'), Qt.TextColorRole)
 
     def hdrClickBtnStartInspect(self):
         if self.cmb_layer_nm.currentText() == "":
@@ -861,6 +864,7 @@ class WidgetInspect(QWidget, Ui_Form):
             canvas = self.plugin.iface.mapCanvas()
             canvas.setExtent(self.maintain_data.extent())
             canvas.refresh()
+            self.insertInspectRes()
             return
 
         # 첫번째 객체로 가기
@@ -887,7 +891,6 @@ class WidgetInspect(QWidget, Ui_Form):
               u"VALUES (%s, %s, %s, %s, %s, %s)"
         cur.execute(sql, (self.inspect_id, self.extjob_id, self.receive_id, self.inspect_dttm,
                                                                                         self.inspecter,self.layer_nm))
-
         self.plugin.conn.commit()
 
     def countDiffFeature(self):
@@ -1125,15 +1128,7 @@ class WidgetInspect(QWidget, Ui_Form):
                 zf.write("word/_rels/document.xml.rels")
 
             QMessageBox.information(self, u"작업완료", u"검수 레포트 작성이 완료되었습니다.")
-
-            if os.path.exists(fileName):
-                cur = self.plugin.conn.cursor()
-                sql = u"update extjob.inspect_main set report_dttm = '{}' where inspect_id = '{}'"\
-                                                    .format(time.strftime("%Y-%m-%d %H:%M:%S", crrTime), self.inspect_id)
-                cur.execute(sql)
-                self.plugin.conn.commit()
-
-                self.cmb_layer_nm.setItemData(self.cmb_layer_nm.findText(layer_nm), QColor('red'), Qt.TextColorRole)
+            self.insertInspectRes(numAccept,numMiss)
 
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"레포트 작성중 오류가 발생하였습니다.\n{}".format(e))
@@ -1217,3 +1212,48 @@ class WidgetInspect(QWidget, Ui_Form):
 
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"속성 뷰어에 문제가 발생했습니다.\n{}".format(e))
+
+    # 검수 메인 테이블에 검수 결과 입력
+    # TODO: 미검수가 있는 데이터 처리
+    def insertInspectRes(self, numAccept=0, numMiss=0):
+        try:
+            cur = self.plugin.conn.cursor()
+            txtColor = ''
+
+            # 변화가 없는 경우
+            if self.numTotal == 0:
+                sql = u"update extjob.inspect_main set inspect_res = 'n' where inspect_id = '{}'"\
+                                                                                            .format(self.inspect_id)
+                txtColor = 'blue'
+
+            # 변화가 있는 경우
+            else:
+                # 모두 통과한 경우
+                if numAccept == self.numTotal:
+                    sql = u"update extjob.inspect_main set inspect_res = 'a' where inspect_id = '{}'"\
+                                                                                            .format(self.inspect_id)
+                    txtColor = 'blue'
+
+                # 거부된 객체가 있는 경우
+                else:
+                    if numMiss == 0:
+                        sql = u"update extjob.inspect_main set inspect_res = 'r' where inspect_id = '{}'"\
+                                                                                            .format(self.inspect_id)
+                        txtColor = 'red'
+
+                    else:
+                        return
+
+            cur.execute(sql)
+
+            sql = u"update extjob.inspect_main set report_dttm = '{}' where inspect_id = '{}'" \
+                .format(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), self.inspect_id)
+            cur.execute(sql)
+            self.plugin.conn.commit()
+
+            if txtColor != '':
+                self.cmb_layer_nm.setItemData(self.cmb_layer_nm.findText(self.cmb_layer_nm.currentText()),
+                                                                                    QColor(txtColor), Qt.TextColorRole)
+
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", u"검수 메인 테이블에 검수결과를 등록하던 중 에러 발생.\n{}".format(e))
