@@ -66,7 +66,8 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
         self.btn_upload.clicked.connect(self.hdrClickBtnUpload)
         self.btn_inspect.clicked.connect(self.hdrClickBtnInspect)
         self.cmb_extjob_nm.currentIndexChanged.connect(self.getWorkArea)
-        self.date_mapext_dttm.dateChanged.connect(self.checkDate)
+        self.date_mapext_dttm.dateChanged.connect(self.checkDateSt)
+        self.date_mapext_dttm_2.dateChanged.connect(self.checkDateEnd)
 
     def setInitValue(self):
         self.fillWorkerList()
@@ -194,11 +195,25 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
         self.lst_workarea.setModel(st_model)
 
-    def checkDate(self):
+    def checkDateSt(self):
         start_date = self.date_mapext_dttm.date()
         end_date = self.date_mapext_dttm_2.date()
-        if start_date > end_date:
-            self.date_mapext_dttm_2.setDate(start_date)
+        crr_date = QDate.currentDate()
+        if start_date > crr_date:
+            self.date_mapext_dttm.setDate(crr_date)
+        else:
+            if start_date > end_date:
+                self.date_mapext_dttm_2.setDate(start_date)
+
+    def checkDateEnd(self):
+        start_date = self.date_mapext_dttm.date()
+        end_date = self.date_mapext_dttm_2.date()
+        crr_date = QDate.currentDate()
+        if end_date > crr_date:
+            self.date_mapext_dttm_2.setDate(crr_date)
+        else:
+            if start_date > end_date:
+                self.date_mapext_dttm.setDate(end_date)
 
     def importRecData(self):
         try:
@@ -239,19 +254,8 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                         continue
 
                     # 받은 적이 있는 레이어 인지 체크 extjob_id + layer_nm
-                    ResCheckReceive = self.checkReceive(layer_nm)
-                    if  ResCheckReceive == 0:
-                        QMessageBox.warning(self, u"경고", u"{}.shp 파일은 이미 납품받은 레이어이기 때문에 다음 레이어로 넘어 갑니다."
-                                            .format(layer_nm))
-                        self.passLayer += u"- {}.shp\n".format(layer_nm)
+                    if not self.checkReceive(layer_nm):
                         continue
-
-                    elif ResCheckReceive == 2:
-                        rc = QMessageBox.question(self, u"주의", u"레이어명 : {}\n검수 이력이 있는 데이터입니다.\n"
-                                                               u"다시 데이터를 납품하시겠습니다?".format(layer_nm)
-                                                                        , QMessageBox.Yes, QMessageBox.No)
-                        if rc != QMessageBox.Yes:
-                            continue
 
                     # 기본 파일 검사
                     if not self.checkExtjobFile(layer_nm):
@@ -380,22 +384,56 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
             cur.execute(sql)
             dataResult = cur.fetchall()
 
-            sql = u"select report_dttm from extjob.inspect_main " \
-                  u"where extjob_id = %s and layer_nm = %s and receive_id = %s order by start_dttm desc"
+            # 받은 적이 있는지 체크
+            # 받은 적이 없음
+            if len(dataResult) == 0:
+                return True
 
-            if len(dataResult) > 0:
-                cur.execute(sql,(extjob_id,layer_nm,dataResult[0][0]))
+            # 받은 적이 있음
+            else:
+                # 검수 결과를 확인
+                sql = u"select report_dttm, inspect_res from extjob.inspect_main " \
+                      u"where extjob_id = %s and layer_nm = %s and receive_id = %s order by start_dttm desc"
+
+                cur.execute(sql, (extjob_id, layer_nm, dataResult[0][0]))
                 reportResult = cur.fetchall()
 
+                # 검수를 한번도 하지 않음
                 if len(reportResult) == 0:
-                    return 0
-                else:
-                    if reportResult[0][0] == NULL:
-                        return 0
-                    else:
-                        return 2
+                    QMessageBox.warning(self, u"경고", u"{}.shp 파일은 이미 납품받은 레이어이기 때문에 다음 레이어로 넘어 갑니다."
+                                        .format(layer_nm))
+                    self.passLayer += u"- {}.shp\n".format(layer_nm)
+                    return False
 
-            return 1
+                # 검수를 결과 존재
+                else:
+                    # 검수가 완료되지 않은 경우
+                    inspect_res = reportResult[0][1]
+
+                    if inspect_res == NULL:
+                        rc = QMessageBox.question(self, u"주의", u"데이터명 : {}\n검수가 완료되지 않은 데이터 입니다.\n"
+                                                                u"다시 데이터를 납품하시겠습니까?"
+                                                                .format(layer_nm), QMessageBox.Yes, QMessageBox.No)
+                        if rc != QMessageBox.Yes:
+                            return False
+
+                    # 검수를 완료한 경우
+                    else:
+                        # 검수 결과
+                        res_text = u""
+                        if inspect_res == 'a' or inspect_res == 'n':
+                            res_text = u"합격"
+                        else:
+                            res_text = u"불합격"
+
+                        rc = QMessageBox.question(self, u"주의", u"레이어명 : {}\n검수 이력이 있는 데이터입니다.\n"
+                                                               u"검수결과 : {}\n\n"
+                                                               u"다시 데이터를 납품하시겠습니까?".format(layer_nm,res_text)
+                                                  , QMessageBox.Yes, QMessageBox.No)
+                        if rc != QMessageBox.Yes:
+                            return False
+
+                return True
 
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"레이어 중복 검사 중 에러가 발생했습니다.\n{}\n{}".format(layer_nm,e))
