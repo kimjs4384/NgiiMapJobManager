@@ -643,17 +643,18 @@ class WidgetInspect(QWidget, Ui_Form):
               u"same_data as (select o.* from (select {0},mbr_hash_12 from geom_same_data) as o " \
               u"inner join (select {0},st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
               u"as mbr_hash_12 from extjob.{3}_{2}) as e on (o.*) = (e.*))," \
-              u"origin as (select o.ogc_fid as origin_ogc_fid, a.{4} from same_data as a " \
+              u"origin as (select o.ogc_fid as origin_ogc_fid, a.{4}, a.mbr_hash_12 from same_data as a " \
               u"inner join (select ogc_fid, {4}," \
               u"st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
               u"as mbr_hash_12 from extjob.{2}_view) as o on a.{4} = o.{4} and a.mbr_hash_12 = o.mbr_hash_12 )," \
-              u"receive as (select o.ogc_fid as receive_ogc_fid, a.{4} from same_data as a " \
+              u"receive as (select o.ogc_fid as receive_ogc_fid, a.{4}, a.mbr_hash_12 from same_data as a " \
               u"inner join (select ogc_fid, {4}," \
               u"st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
               u"as mbr_hash_12 from extjob.{3}_{2}) as o on a.{4} = o.{4} and a.mbr_hash_12 = o.mbr_hash_12 ) " \
               u"insert into extjob.inspect_objlist( inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )"\
               u"select '{5}' as inspect_id, '{2}' as layer_nm, origin_ogc_fid, receive_ogc_fid, " \
-              u"'s' as mod_type from origin, receive where origin.{4} = receive.{4}"\
+              u"'s' as mod_type from origin, receive where origin.{4} = receive.{4} " \
+              u"and origin.mbr_hash_12 = receive.mbr_hash_12"\
             .format(self.column_sql,self.geohash_sql,self.layer_nm,
                     self.receive_id,self.id_column,self.inspect_id,add_sql)
         self.sql_rep.write("same_data : " + sql + "\n")
