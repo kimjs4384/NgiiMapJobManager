@@ -58,6 +58,7 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         self.setupUi(self)
         self.setInitValue()
         self.connectFct()
+        plugin.clearRb()
 
     def setInitValue(self, defaultBjcd = '3611011100'):
         self.fillWorkerList()
