@@ -590,24 +590,41 @@ class WidgetInspect(QWidget, Ui_Form):
 
             QMessageBox.warning(self, u"오류", str(e))
 
-    def makeColumnSql(self):
+    def makeColumnSql(self,checkNum=True):
+        all_column_nm = []
+        num_column_nm = []
+
         cur = self.plugin.conn.cursor()
+
         sql = "select column_name from information_schema.columns " \
               "where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(self.layer_nm)
-
         cur.execute(sql)
-        column_nm = []
-        results = cur.fetchall()
+        all_results = cur.fetchall()
 
-        for list in results:
-            column_nm.append(list[0])
+        if checkNum:
+            sql = "select column_name from information_schema.columns " \
+                  "where table_schema = 'nfsd' and table_name = '{}' and data_type = 'numeric' ".format(self.layer_nm)
+            cur.execute(sql)
+            num_results = cur.fetchall()
 
-        column_nm.remove('ogc_fid')
-        column_nm.remove('wkb_geometry')
+            for list in num_results:
+                num_column_nm.append(list[0])
 
-        self.column_sql = ','.join(column_nm)
+            for list in all_results:
+                if list[0] in num_column_nm:
+                    all_column_nm.append(u"round({0}, 3) as {0}".format(list[0]))
+                else:
+                    all_column_nm.append(list[0])
+        else:
+            for list in all_results:
+                all_column_nm.append(list[0])
 
-        self.id_column = column_nm[0]
+        all_column_nm.remove('ogc_fid')
+        all_column_nm.remove('wkb_geometry')
+
+        self.column_sql = ','.join(all_column_nm)
+
+        self.id_column = all_column_nm[0]
 
     def findSame(self):
         cur = self.plugin.conn.cursor()
@@ -759,7 +776,7 @@ class WidgetInspect(QWidget, Ui_Form):
         cur.execute(sql)
 
     def addLayers(self):
-        self.makeColumnSql()
+        self.makeColumnSql(False)
 
         QgsMapLayerRegistry.instance().removeAllMapLayers()
         # TODO: 처음 초기화 됐을때는 ?!
