@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file '.\ui\inspect.ui'
+# Form implementation generated from reading ui file 'inspect.ui'
 #
-# Created: Fri May 20 10:41:13 2016
-#      by: PyQt4 UI code generator 4.10.2
+# Created by: PyQt4 UI code generator 4.11.4
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -39,7 +38,7 @@ class Ui_Dialog(object):
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.setObjectName(_fromUtf8("scrollArea"))
         self.scrollAreaWidgetContents = QtGui.QWidget()
-        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 345, 617))
+        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 328, 676))
         self.scrollAreaWidgetContents.setObjectName(_fromUtf8("scrollAreaWidgetContents"))
         self.gridLayout_2 = QtGui.QGridLayout(self.scrollAreaWidgetContents)
         self.gridLayout_2.setObjectName(_fromUtf8("gridLayout_2"))
@@ -174,16 +173,16 @@ class Ui_Dialog(object):
         self.btn_reject.setObjectName(_fromUtf8("btn_reject"))
         self.verticalLayout_2.addWidget(self.btn_reject)
         self.horizontalLayout_8.addLayout(self.verticalLayout_2)
-        self.pushButton = QtGui.QPushButton(self.scrollAreaWidgetContents)
+        self.btn_show_attr = QtGui.QPushButton(self.scrollAreaWidgetContents)
         sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.pushButton.sizePolicy().hasHeightForWidth())
-        self.pushButton.setSizePolicy(sizePolicy)
-        self.pushButton.setMinimumSize(QtCore.QSize(49, 0))
-        self.pushButton.setMaximumSize(QtCore.QSize(50, 16777215))
-        self.pushButton.setObjectName(_fromUtf8("pushButton"))
-        self.horizontalLayout_8.addWidget(self.pushButton)
+        sizePolicy.setHeightForWidth(self.btn_show_attr.sizePolicy().hasHeightForWidth())
+        self.btn_show_attr.setSizePolicy(sizePolicy)
+        self.btn_show_attr.setMinimumSize(QtCore.QSize(49, 0))
+        self.btn_show_attr.setMaximumSize(QtCore.QSize(50, 16777215))
+        self.btn_show_attr.setObjectName(_fromUtf8("btn_show_attr"))
+        self.horizontalLayout_8.addWidget(self.btn_show_attr)
         self.gridLayout_2.addLayout(self.horizontalLayout_8, 4, 0, 1, 1)
         self.label_4 = QtGui.QLabel(self.scrollAreaWidgetContents)
         self.label_4.setObjectName(_fromUtf8("label_4"))
@@ -222,7 +221,7 @@ class Ui_Dialog(object):
         self.btn_prev.setText(_translate("Dialog", "< 이전항목", None))
         self.btn_next.setText(_translate("Dialog", "다음항목>", None))
         self.btn_reject.setText(_translate("Dialog", "거부", None))
-        self.pushButton.setText(_translate("Dialog", "속성\n"
+        self.btn_show_attr.setText(_translate("Dialog", "속성\n"
 "보기", None))
         self.label_4.setText(_translate("Dialog", "거부사유", None))
         self.btn_make_report.setText(_translate("Dialog", "검수 리포트 작성", None))

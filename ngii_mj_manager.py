@@ -30,6 +30,7 @@ from qgis.core import *
 from qgis.gui import QgsRubberBand
 from subprocess import check_output
 import sys
+from glob import glob
 
 # Initialize Qt resources from file resources.py
 # Import the code for the dialog
@@ -253,7 +254,9 @@ class NgiiMapJobManager:
             canvas.refresh()
 
     def clearRb(self):
+        self.extjobArea = None
         self.initRubberLayer()
+
 
     def addExtjobArea(self, wkt, moveTo = False):
         geom = QgsGeometry.fromWkt(wkt)
@@ -342,7 +345,8 @@ class NgiiMapJobManager:
                 else:
                     ogr2ogrPath = "/Library/Frameworks/GDAL.framework/Versions/1.11/Programs/"
 
-                # TODO: 생산 대상 파일이 이미 있는지 확인
+                for f in glob(shapeFileName + '.*'):
+                    os.remove(f)
 
                 command = u'{}ogr2ogr ' \
                           u' --config SHAPE_ENCODING UTF-8 -f "ESRI Shapefile" {}.shp ' \

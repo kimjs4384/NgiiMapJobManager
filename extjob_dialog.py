@@ -58,6 +58,7 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         self.setupUi(self)
         self.setInitValue()
         self.connectFct()
+        plugin.clearRb()
 
     def setInitValue(self, defaultBjcd = '3611011100'):
         self.fillWorkerList()
@@ -177,11 +178,18 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
                     continue
                 if len(sidoEnt['sub']) == 0:
                     cur = self.conn.cursor()
-                    sql = "select bjcd, name from nfsd.nf_a_g01103 where bjcd like '{}%' order by name".format(bjcd[:2])
+                    sql = "select a.bjcd, a.name, b.name From nfsd.nf_a_g01103 as a " \
+                          "left join ( select bjcd, name from nfsd.nf_a_g01103 except select bjcd, name " \
+                          "from nfsd.nf_a_g01103 where substr(bjcd, 5, 1) != '0' and concat(left(bjcd, 4),'000000') " \
+                          "in (select bjcd from nfsd.nf_a_g01103) ) as b on left(a.bjcd, 4) = left(b.bjcd, 4)" \
+                          "where a.bjcd like '{}%' order by b.name,a.bjcd".format(bjcd[:2])
                     cur.execute(sql)
                     sggList = cur.fetchall()
                     for sgg in sggList:
-                        sggEnt = {'bjcd': sgg[0], 'name': sgg[1], 'sub': []}
+                        sgg_name = sgg[1]
+                        if sgg[1] != sgg[2]:
+                            sgg_name = u'{} {}'.format(sgg[2],sgg[1])
+                        sggEnt = {'bjcd': sgg[0], 'name': sgg_name, 'sub': []}
                         sidoEnt['sub'].append(sggEnt)
                 return sidoEnt
         except Exception as e:

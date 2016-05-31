@@ -31,9 +31,11 @@ import time
 import ConfigParser
 import zipfile
 
+from qgis._gui import QgsMapCanvasLayer
 from qgis.core import *
 
 from ui.inspect_dialog_base import Ui_Dialog as Ui_Form
+from attr_view_dialog import DiaAttrView
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'ui/inspect.ui'))
@@ -47,6 +49,15 @@ class WidgetInspect(QWidget, Ui_Form):
     crrIndex = None
     numTotal = -1
     numProcessed = 0
+    inspect_id = None
+    layer_nm = None
+    receive_id = None
+    extjob_id = None
+    id_column = None
+    column_sql = None
+    maintain_data = None
+    diff_data = None
+    inspectList = None
 
     def __init__(self, iface, dockwidget, parent):
         QWidget.__init__(self)
@@ -54,18 +65,12 @@ class WidgetInspect(QWidget, Ui_Form):
         self.setupUi(self)
         self.plugin = parent
 
-        self.inspect_id = None
-        self.layer_nm = None
-        self.receive_id = None
-        self.extjob_id = None
-        self.id_column = None
-        self.column_sql = None
-
         self.setInitValue()
         self.connectFct()
 
-        if self.plugin.dlgReceive != None and self.plugin.dlgReceive.isVisible():
-            extjob_id = self.plugin.dlgReceive.cmb_extjob_nm.itemData(self.plugin.dlgReceive.cmb_extjob_nm.currentIndex())
+        if self.plugin.dlgReceive is not None and self.plugin.dlgReceive.isVisible():
+            extjob_id = self.plugin.dlgReceive.cmb_extjob_nm.itemData(
+                                                                    self.plugin.dlgReceive.cmb_extjob_nm.currentIndex())
             if extjob_id != None and extjob_id != "":
                 self.setDefaultInfo(extjob_id)
 
@@ -74,12 +79,14 @@ class WidgetInspect(QWidget, Ui_Form):
         self.date_mapext_dttm.dateChanged.connect(self.hdrCmbWorkerIndexChange)
         self.cmb_receive_id.currentIndexChanged.connect(self.addLayerList)
         self.cmb_extjob_nm.currentIndexChanged.connect(self.hdrCmbExtjobNmIndexChange)
+        self.cmb_layer_nm.currentIndexChanged.connect(self.refreshUI)
         self.btn_start_inspect.clicked.connect(self.hdrClickBtnStartInspect)
         self.btn_next.clicked.connect(self.hdrClickBtnNext)
         self.btn_prev.clicked.connect(self.hdrClickBtnPrev)
         self.btn_accept.clicked.connect(self.hdrClickBtnAccept)
         self.btn_reject.clicked.connect(self.hdrClickBtnReject)
         self.btn_make_report.clicked.connect(self.hdrClickBtnMakeReport)
+        self.btn_show_attr.clicked.connect(self.showAttrFeature)
 
     def setInitValue(self):
         self.fillWorkerList()
@@ -157,11 +164,11 @@ class WidgetInspect(QWidget, Ui_Form):
                 basedata_dt = result[2]
                 self.cmb_extjob_nm.addItem(extjob_nm)
                 self.cmb_extjob_nm.setItemData(self.cmb_extjob_nm.count()-1, extjob_id)
-                self.date_basedata_dt.setDate(basedata_dt)
+                self.date_basedata_dt.setDate(QDate.fromString(basedata_dt.isoformat(),'yyyy-MM-dd'))
 
             sel_extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
             sql = u"select receive_id from (select * from extjob.receive_main where extjob_id = '{}') as ext " \
-                  u"group by receive_id".format(sel_extjob_id)
+                  u"group by receive_id order by receive_id asc".format(sel_extjob_id)
             cur.execute(sql)
             results = cur.fetchall()
 
@@ -178,6 +185,18 @@ class WidgetInspect(QWidget, Ui_Form):
 
         except Exception as e:
             QMessageBox.warning(self, "SQL ERROR", str(e))
+
+    def refreshUI(self):
+        if self.btn_start_inspect.isVisible() == False:
+            self.btn_start_inspect.setVisible(True)
+            self.btn_accept.setDisabled(True)
+            self.btn_next.setDisabled(True)
+            self.btn_prev.setDisabled(True)
+            self.btn_reject.setDisabled(True)
+            self.btn_make_report.setDisabled(True)
+
+            self.progressBar.hide()
+            self.lbl_progress.hide()
 
     def hdrCmbExtjobNmIndexChange(self):
         self.addLayerList()
@@ -196,34 +215,112 @@ class WidgetInspect(QWidget, Ui_Form):
         results = cur.fetchall()
 
         self.cmb_layer_nm.addItem('')
+
+        sql = u"select tablename from pg_tables where schemaname = 'extjob' and tablename = %s"
+        sql_2 = u"select inspect_res from extjob.inspect_main where receive_id = %s " \
+              u"and layer_nm = %s order by start_dttm desc"
         for result in results:
-            self.cmb_layer_nm.addItem(result[0])
-            self.receive_dttm = result[1]
+            # 실제 테이블이 존재하는지 체크
+            cur.execute(sql,(u"{}_{}".format(self.receive_id.lower(),result[0]),))
+            tableCount = cur.fetchall()
+            if len(tableCount) != 0:
+                self.cmb_layer_nm.addItem(result[0])
+                self.receive_dttm = result[1]
+
+                cur.execute(sql_2, (self.receive_id, result[0]))
+                checkRep = cur.fetchall()
+
+                if len(checkRep) > 0:
+                    if checkRep[0][0] == 'r':
+                        self.cmb_layer_nm.setItemData(
+                                                self.cmb_layer_nm.findText(result[0]),QColor('red'),Qt.TextColorRole)
+                    elif checkRep[0][0] != NULL:
+                        self.cmb_layer_nm.setItemData(
+                                                self.cmb_layer_nm.findText(result[0]), QColor('blue'), Qt.TextColorRole)
 
     def hdrClickBtnStartInspect(self):
         if self.cmb_layer_nm.currentText() == "":
-            QMessageBox.warning(self, u"오류", u"검수할 레이러를 선택하셔야합니다.")
+            QMessageBox.warning(self, u"오류", u"검수할 레이어를 선택하셔야합니다.")
             return
 
         if self.edt_inpector.text() == "":
             QMessageBox.warning(self, u"오류", u"검수자가 기록되어야합니다.")
             return
 
-        rc = QMessageBox.question(self, u"확인", u"변경탐지를 시작하시겠습니까?",
-                                  QMessageBox.Yes, QMessageBox.No)
-        if rc != QMessageBox.Yes:
+        # 검수 결과가 있는지 체크
+        res = self.checkInspect()
+        if res == 1:
+            rc = QMessageBox.question(self, u"확인", u"변화탐지를 다시 하시겠습니까?\n\n"
+                                                   u"다시 할 경우 기존의 데이터는 삭제 됩니다.",
+                                      QMessageBox.Yes, QMessageBox.No)
+            if rc == QMessageBox.Yes:
+                if not self.checkReport():
+                    rc = QMessageBox.question(self, u"확인", u"해당 레이어의 이전 검수에 대한\n"
+                                                           u"검수 결과 레포트가 없습니다.\n\n"
+                                                           u"그래도 계속 진행하시겠습니까?",
+                                              QMessageBox.Yes, QMessageBox.No)
+                    if rc != QMessageBox.Yes:
+                        return
+
+                self.deleteInspectData()
+                self.findChange()
+            else:
+                self.lbl_progress.setText(u"데이터 불러오는 중...")
+                self.lbl_progress.show()
+                self.btn_start_inspect.setVisible(False)  # 자리가 좁아 안보이게 하는 것으로 수정
+                self.btn_accept.setDisabled(False)
+                self.btn_next.setDisabled(False)
+                self.btn_prev.setDisabled(False)
+                self.btn_reject.setDisabled(False)
+                self.btn_make_report.setDisabled(False)
+
+                self.extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
+
+                # 변화정보 양을 세서 보여줌
+                self.countDiffFeature()
+                self.addLayers()
+
+        elif res == 2:
+            rc = QMessageBox.question(self, u"확인", u"변경탐지를 시작하시겠습니까?",
+                                      QMessageBox.Yes, QMessageBox.No)
+            if rc != QMessageBox.Yes:
+                return
+
+            self.findChange()
+        else:
             return
 
-        # 변경된 데이터가 하나도 없을 경우 불필요함으로 변경 유무를 판단하는 곳으로 이동
-        # self.btn_start_inspect.setDisabled(True)
-        # self.btn_start_inspect.setVisible(False)  # 자리가 좁아 안보이게 하는 것으로 수정
-        # self.btn_accept.setDisabled(False)
-        # self.btn_next.setDisabled(False)
-        # self.btn_prev.setDisabled(False)
-        # self.btn_reject.setDisabled(False)
-        # self.btn_make_report.setDisabled(False)
+    def checkInspect(self):
+        try:
+            cur = self.plugin.conn.cursor()
 
-        self.findChange()
+            self.receive_id = self.cmb_receive_id.currentText()
+            self.layer_nm = self.cmb_layer_nm.currentText()
+
+            sql = u"select inspect_id,start_dttm from extjob.inspect_main where receive_id ='{}' " \
+                  u"and layer_nm = '{}' order by start_dttm desc".format(self.receive_id,self.layer_nm)
+            cur.execute(sql)
+            results = cur.fetchall()
+
+            if len(results) > 0:
+                self.inspect_id = results[0][0]
+                self.inspect_dttm = results[0][1]
+
+                rc = QMessageBox.question(self, u"주의", u"검수 기록이 존재하는 데이터입니다.\n\n"
+                                                       u"다시 검수하시겠습니까?" , QMessageBox.Yes, QMessageBox.No)
+                if rc == QMessageBox.Yes:
+                    # 새로운 검수
+                    return 1
+                else:
+                    # 취소
+                    return 0
+
+            # 바로 변화탐지
+            return 2
+
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", u"검수 중복 검사 중 에러가 발생하였습니다.\n{}".format(e))
+            return 0
 
     def findChange(self):
         self.lbl_progress.setText(u"변경 탐지중...")
@@ -250,6 +347,27 @@ class WidgetInspect(QWidget, Ui_Form):
         else:
             QMessageBox.information(self, u"탐지결과", u"변경된 데이터가 없습니다.")
             self.lbl_progress.setText(u"변경 사항 없음")
+
+    def checkReport(self):
+        cur = self.plugin.conn.cursor()
+        sql = u"select report_dttm from extjob.inspect_main where inspect_id = '{}'" \
+            .format(self.inspect_id)
+        cur.execute(sql)
+
+        result = cur.fetchone()
+
+        # 리포트 기록이 있을 경우
+        if result[0] != NULL:
+            return True
+
+        return False
+
+    def deleteInspectData(self):
+        cur = self.plugin.conn.cursor()
+        sql = u"delete from extjob.inspect_objlist where inspect_id = '{}'" \
+              .format(self.inspect_id)
+        cur.execute(sql)
+        self.plugin.conn.commit()
 
     def hdrClickBtnNext(self):
         self.iterCurrentObj(True)
@@ -299,11 +417,20 @@ class WidgetInspect(QWidget, Ui_Form):
                                                     mod_type_txt, insp_stat_txt)
         self.lbl_progress.setText(message)
 
-        geom = self.inspectList[self.crrIndex].geometry()
-        bound = geom.boundingBox()
         canvas = self.plugin.iface.mapCanvas()
+
+        geom = crrFeature.geometry()
+        bound = geom.boundingBox()
         canvas.setExtent(bound)
-        canvas.zoomOut()
+
+        feature_id = crrFeature.id()
+        self.diff_data.setSelectedFeatures([feature_id])
+
+        if self.diff_data.geometryType() == QGis.Point:
+            canvas.zoomScale(2000)
+        else:
+            canvas.zoomOut()
+
         canvas.refresh()
 
     def hdrClickBtnAccept(self):
@@ -383,7 +510,8 @@ class WidgetInspect(QWidget, Ui_Form):
 
         # 거부시 화면 저장
         obj_id = crrFeature['id']
-        image_path = os.path.join(self.plugin.plugin_dir, u"report_template", "word/media/image{}.png".format(100 + obj_id))
+        image_path = os.path.join(self.plugin.plugin_dir, u"report_template",
+                                                                        "word/media/image{}.png".format(100 + obj_id))
         canvas = self.plugin.iface.mapCanvas()
         canvas.saveAsImage(image_path)
 
@@ -394,8 +522,6 @@ class WidgetInspect(QWidget, Ui_Form):
     def findDiff(self):
         try:
             # 외주 정보를 통해서 view를 만듦
-            self.layer_nm = self.cmb_layer_nm.currentText()
-
             self.sql_rep = open(os.path.join(os.path.dirname(__file__), "conf", "sql_rep.txt"), 'a')
             self.sql_rep.write(u'data : {} , inspect_id : {} , layer_nm : {} \n\n'
                                .format(str(QDate.currentDate()), self.inspect_id, self.layer_nm))
@@ -411,21 +537,7 @@ class WidgetInspect(QWidget, Ui_Form):
             cur.execute(sql)
 
             # 검사하려는 테이블의 칼럼을 shp list로 만듦
-            sql = "select column_name from information_schema.columns " \
-                  "where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(self.layer_nm)
-            cur.execute(sql)
-            column_nm = []
-            results = cur.fetchall()
-
-            for list in results:
-                column_nm.append(list[0])
-
-            column_nm.remove('ogc_fid')
-            column_nm.remove('wkb_geometry')
-
-            self.column_sql = ','.join(column_nm)
-
-            self.id_column = column_nm[0]
+            self.makeColumnSql()
 
             # 테이블의 geometry를 가져옴
             sql = u"select GeometryType(wkb_geometry) from nfsd.{} limit 1".format(self.layer_nm)
@@ -478,6 +590,42 @@ class WidgetInspect(QWidget, Ui_Form):
 
             QMessageBox.warning(self, u"오류", str(e))
 
+    def makeColumnSql(self,checkNum=True):
+        all_column_nm = []
+        num_column_nm = []
+
+        cur = self.plugin.conn.cursor()
+
+        sql = "select column_name from information_schema.columns " \
+              "where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(self.layer_nm)
+        cur.execute(sql)
+        all_results = cur.fetchall()
+
+        if checkNum:
+            sql = "select column_name from information_schema.columns " \
+                  "where table_schema = 'nfsd' and table_name = '{}' and data_type = 'numeric' ".format(self.layer_nm)
+            cur.execute(sql)
+            num_results = cur.fetchall()
+
+            for list in num_results:
+                num_column_nm.append(list[0])
+
+            for list in all_results:
+                if list[0] in num_column_nm:
+                    all_column_nm.append(u"round({0}, 3) as {0}".format(list[0]))
+                else:
+                    all_column_nm.append(list[0])
+        else:
+            for list in all_results:
+                all_column_nm.append(list[0])
+
+        all_column_nm.remove('ogc_fid')
+        all_column_nm.remove('wkb_geometry')
+
+        self.column_sql = ','.join(all_column_nm)
+
+        self.id_column = all_column_nm[0]
+
     def findSame(self):
         cur = self.plugin.conn.cursor()
 
@@ -491,16 +639,22 @@ class WidgetInspect(QWidget, Ui_Form):
 
         sql = u"with geom_same_data as ( select o.* from (select {0},{1} from extjob.{2}_view) as o " \
               u"inner join (select {0},{1} from extjob.{3}_{2}) as e " \
-              u"on o.mbr_hash_12 = e.mbr_hash_12 {6} )," \
-              u"same_data as (select o.* from (select {0} from geom_same_data) as o " \
-              u"inner join (select {0} from extjob.{3}_{2}) as e on (o.*) = (e.*))," \
-              u"origin as ( select o.ogc_fid as origin_ogc_fid, a.{4} from same_data as a " \
-              u"inner join extjob.{2}_view as o on a.{4} = o.{4} )," \
-              u"receive as (select o.ogc_fid as receive_ogc_fid, a.{4} from same_data as a " \
-              u"inner join extjob.{3}_{2} as o on a.{4} = o.{4} ) " \
-              u"insert into extjob.inspect_objlist( inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )" \
+              u"on o.mbr_hash_12 = e.mbr_hash_12 {6} and o.{4} = e.{4} )," \
+              u"same_data as (select o.* from (select {0},mbr_hash_12 from geom_same_data) as o " \
+              u"inner join (select {0},st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
+              u"as mbr_hash_12 from extjob.{3}_{2}) as e on (o.*) = (e.*))," \
+              u"origin as (select o.ogc_fid as origin_ogc_fid, a.{4}, a.mbr_hash_12 from same_data as a " \
+              u"inner join (select ogc_fid, {4}," \
+              u"st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
+              u"as mbr_hash_12 from extjob.{2}_view) as o on a.{4} = o.{4} and a.mbr_hash_12 = o.mbr_hash_12 )," \
+              u"receive as (select o.ogc_fid as receive_ogc_fid, a.{4}, a.mbr_hash_12 from same_data as a " \
+              u"inner join (select ogc_fid, {4}," \
+              u"st_geohash(ST_Transform(st_centroid(st_envelope(wkb_geometry)), 4326), 12) " \
+              u"as mbr_hash_12 from extjob.{3}_{2}) as o on a.{4} = o.{4} and a.mbr_hash_12 = o.mbr_hash_12 ) " \
+              u"insert into extjob.inspect_objlist( inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type )"\
               u"select '{5}' as inspect_id, '{2}' as layer_nm, origin_ogc_fid, receive_ogc_fid, " \
-              u"'s' as mod_type from origin, receive where origin.{4} = receive.{4}"\
+              u"'s' as mod_type from origin, receive where origin.{4} = receive.{4} " \
+              u"and origin.mbr_hash_12 = receive.mbr_hash_12"\
             .format(self.column_sql,self.geohash_sql,self.layer_nm,
                     self.receive_id,self.id_column,self.inspect_id,add_sql)
         self.sql_rep.write("same_data : " + sql + "\n")
@@ -529,7 +683,7 @@ class WidgetInspect(QWidget, Ui_Form):
 
     def findEditAttr(self):
         cur = self.plugin.conn.cursor()
-
+        # TODO: 지오해쉬와 면적/길이 오차 범위를 모두 충족하는 객체들이 있을때 처리방법
         if self.geom_type == 'MULTIPOLYGON':  # 폴리곤 일때는 GeoHash 와 면적 생성
             sql = u"with same as (select {0}, {1} from (select origin_ogc_fid from extjob.inspect_objlist " \
                   u"where mod_type = 's' and inspect_id = '{2}') as s " \
@@ -537,16 +691,20 @@ class WidgetInspect(QWidget, Ui_Form):
                   u"om as (select {0}, {1} from extjob.{3}_view except select * from same ), " \
                   u"em as (select {0}, {1} from extjob.{4}_{3} except select * from same ), " \
                   u"geometry as ( select mbr_hash_12,geom_area from ( select om.* from om " \
-                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 and em.geom_area = om.geom_area) as t) " \
-                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 and " \
+                  u"em.geom_area between om.geom_area*0.95 and om.geom_area*1.05 ) as t) " \
+                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid,receive_ogc_fid,mod_type)"\
                   u"select '{2}' as inspect_id, '{3}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
                   u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12, o.geom_area from geometry " \
                   u"inner join (select ogc_fid, {1} from extjob.{3}_view ) as o " \
-                  u"on (geometry.mbr_hash_12,geometry.geom_area)=(o.mbr_hash_12,o.geom_area)) as origin, " \
+                  u"on geometry.mbr_hash_12=o.mbr_hash_12 " \
+                  u"and geometry.geom_area between o.geom_area*0.95 and o.geom_area*1.05) as origin, " \
                   u"(select ogc_fid as receive_ogc_fid, o.mbr_hash_12, o.geom_area from geometry " \
                   u"inner join (select ogc_fid, {1} from extjob.{4}_{3} ) as o " \
-                  u"on (geometry.mbr_hash_12,geometry.geom_area)=(o.mbr_hash_12,o.geom_area)) as receive " \
-                  u"where (origin.mbr_hash_12,origin.geom_area) = (receive.mbr_hash_12,receive.geom_area)" \
+                  u"on geometry.mbr_hash_12=o.mbr_hash_12 " \
+                  u"and geometry.geom_area between o.geom_area*0.95 and o.geom_area*1.05) as receive " \
+                  u"where receive.mbr_hash_12=origin.mbr_hash_12 " \
+                  u"and receive.geom_area between origin.geom_area*0.95 and origin.geom_area*1.05" \
                 .format(self.column_sql, self.geohash_sql, self.inspect_id,
                         self.layer_nm, self.receive_id)
         elif self.geom_type == 'MULTILINESTRING':  # 선 일때는 GeoHash 와 길이 생성
@@ -556,16 +714,20 @@ class WidgetInspect(QWidget, Ui_Form):
                   u"om as (select {0}, {1} from extjob.{3}_view except select * from same ), " \
                   u"em as (select {0}, {1} from extjob.{4}_{3} except select * from same ), " \
                   u"geometry as ( select mbr_hash_12,geom_length from ( select om.* from om " \
-                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 and em.geom_length = om.geom_length) as t) " \
-                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+                  u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 " \
+                  u"and em.geom_length between om.geom_length*0.95 and om.geom_length*1.05) as t) " \
+                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid,mod_type)"\
                   u"select '{2}' as inspect_id, '{3}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
                   u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12, o.geom_length from geometry " \
                   u"inner join (select ogc_fid, {1} from extjob.{3}_view ) as o " \
-                  u"on (geometry.mbr_hash_12,geometry.geom_length)=(o.mbr_hash_12,o.geom_length)) as origin, " \
+                  u"on geometry.mbr_hash_12=o.mbr_hash_12 " \
+                  u"and geometry.geom_length between o.geom_length*0.95 and o.geom_length*1.05) as origin, " \
                   u"(select ogc_fid as receive_ogc_fid, o.mbr_hash_12, o.geom_length from geometry " \
                   u"inner join (select ogc_fid, {1} from extjob.{4}_{3} ) as o " \
-                  u"on (geometry.mbr_hash_12,geometry.geom_length)=(o.mbr_hash_12,o.geom_length)) as receive " \
-                  u"where (origin.mbr_hash_12,origin.geom_length) = (receive.mbr_hash_12,receive.geom_length)" \
+                  u"on geometry.mbr_hash_12=o.mbr_hash_12 " \
+                  u"and geometry.geom_length between o.geom_length*0.95 and o.geom_length*1.05) as receive " \
+                  u"where receive.mbr_hash_12=origin.mbr_hash_12 " \
+                  u"and receive.geom_length between origin.geom_length*0.95 and origin.geom_length*1.05" \
                 .format(self.column_sql, self.geohash_sql, self.inspect_id,
                         self.layer_nm, self.receive_id)
         else:  # 점 일때는 GeoHash 만 생성
@@ -576,7 +738,7 @@ class WidgetInspect(QWidget, Ui_Form):
                   u"em as (select {0}, {1} from extjob.{4}_{3} except select * from same ), " \
                   u"geometry as ( select mbr_hash_12 from ( select om.* from om " \
                   u"inner join em on em.mbr_hash_12 = om.mbr_hash_12 ) as t) " \
-                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid, receive_ogc_fid, mod_type) " \
+                  u"insert into extjob.inspect_objlist(inspect_id, layer_nm, origin_ogc_fid,receive_ogc_fid,mod_type) "\
                   u"select '{2}' as inspect_id, '{3}' as layer_nm, origin_ogc_fid, receive_ogc_fid, 'ef' as mod_type " \
                   u"from (select ogc_fid as origin_ogc_fid, o.mbr_hash_12 from geometry " \
                   u"inner join (select ogc_fid, {1} from extjob.{3}_view ) as o " \
@@ -615,6 +777,13 @@ class WidgetInspect(QWidget, Ui_Form):
         cur.execute(sql)
 
     def addLayers(self):
+        self.makeColumnSql(False)
+
+        QgsMapLayerRegistry.instance().removeAllMapLayers()
+        # TODO: 처음 초기화 됐을때는 ?!
+        # if self.maintain_data != None and self.diff_data != None:
+        #     QgsMapLayerRegistry.instance().removeMapLayers([self.maintain_data, self.diff_data])
+
         uri = QgsDataSourceURI()
 
         conf = ConfigParser.SafeConfigParser()
@@ -636,21 +805,21 @@ class WidgetInspect(QWidget, Ui_Form):
 
         uri.setConnection(ip_address, port, database, account, password)
         uri.setDataSource("", sql, "wkb_geometry", "", "id")
-        maintain_data = QgsVectorLayer(uri.uri(), u'변화없음', "postgres")
+        self.maintain_data = QgsVectorLayer(uri.uri(), u'변화없음', "postgres")
 
         symbol = None
-        if maintain_data.wkbType() == QGis.WKBMultiPolygon:
+        if self.maintain_data.wkbType() == QGis.WKBMultiPolygon:
             symbol = QgsFillSymbolV2().createSimple({'color_border': 'gray', 'width_border': '0.5',
                                                      'style': 'no', 'style_border': 'solid'})
-        elif maintain_data.wkbType() == QGis.WKBMultiLineString:
+        elif self.maintain_data.wkbType() == QGis.WKBMultiLineString:
             symbol = QgsLineSymbolV2().createSimple({'color': 'gray', 'width': '0.5',
                                                      'style': 'solid'})
         else:
             symbol = QgsMarkerSymbolV2.createSimple({'name': 'circle', 'color': 'gray', 'size': '2',
                                                      'outline_style': 'no'})
 
-        maintain_data.rendererV2().setSymbol(symbol)
-        QgsMapLayerRegistry.instance().addMapLayer(maintain_data)
+        self.maintain_data.rendererV2().setSymbol(symbol)
+        QgsMapLayerRegistry.instance().addMapLayer(self.maintain_data)
 
         # 변화가 있는 정보
         sql = u"(select row_number() over (order by mod_type asc) as id, * from (select ext.*, wkb_geometry, {} from "\
@@ -665,7 +834,7 @@ class WidgetInspect(QWidget, Ui_Form):
                         self.layer_nm, self.inspect_id, self.receive_id, self.layer_nm)
 
         uri.setDataSource("",sql, "wkb_geometry", "" , "id")
-        diff_data = QgsVectorLayer(uri.uri(), u'변화정보', "postgres")
+        self.diff_data = QgsVectorLayer(uri.uri(), u'변화정보', "postgres")
 
         mod_type_symbol = {
             'a' : ('green',u'추가'),
@@ -674,7 +843,7 @@ class WidgetInspect(QWidget, Ui_Form):
             'ef' : ('blue',u'속성변경')
         }
 
-        diff_data_type = diff_data.wkbType()
+        diff_data_type = self.diff_data.wkbType()
         categories = []
         for mod_type, (color, label) in mod_type_symbol.items():
             if diff_data_type == QGis.WKBMultiPolygon:
@@ -691,21 +860,29 @@ class WidgetInspect(QWidget, Ui_Form):
 
         expression = 'mod_type'  # field name
         renderer = QgsCategorizedSymbolRendererV2(expression, categories)
-        diff_data.setRendererV2(renderer)
+        self.diff_data.setRendererV2(renderer)
 
-        QgsMapLayerRegistry.instance().addMapLayer(diff_data)
+        QgsMapLayerRegistry.instance().addMapLayer(self.diff_data)
 
         self.inspectList = []
         self.crrIndex = -1
-        iter = diff_data.getFeatures()
+        iter = self.diff_data.getFeatures()
         for feature in iter:
             self.inspectList.append(feature)
 
         self.numTotal = len(self.inspectList)
         self.numProcessed = 0
 
+        for feature in self.inspectList:
+            if feature['inspect_res'] == 'accept' or feature['inspect_res'] == 'reject':
+                self.numProcessed += 1
+
         # 변경된 데이터가 없을 경우
         if self.numTotal <= 0:
+            canvas = self.plugin.iface.mapCanvas()
+            canvas.setExtent(self.maintain_data.extent())
+            canvas.refresh()
+            self.insertInspectRes()
             return
 
         # 첫번째 객체로 가기
@@ -714,7 +891,7 @@ class WidgetInspect(QWidget, Ui_Form):
     def insertInspectInfo(self):
         # 검수ID, 검수 날짜 생성
         cur = self.plugin.conn.cursor()
-        sql = u"SELECT nextid('AD') as extjob_id, current_timestamp as mapext_dttm"
+        sql = u"SELECT nextid('AD') as inspect_id, current_timestamp as inspect_dttm"
         cur.execute(sql)
         result = cur.fetchone()
         self.inspect_id = result[0]
@@ -724,11 +901,15 @@ class WidgetInspect(QWidget, Ui_Form):
         self.extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
         self.inspecter = self.edt_inpector.text()
 
-        # Secure Coding
-        sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm) " \
-              u"VALUES (%s, %s, %s, %s, %s)"
-        cur.execute(sql, (self.inspect_id, self.extjob_id, self.receive_id, self.inspect_dttm, self.inspecter))
-
+        # TODO: Secure Coding
+        # sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm) " \
+        #       u"VALUES ('{}','{}','{}','{}','{}')"\
+        #     .format(self.inspect_id, self.extjob_id, self.receive_id, inspect_dttm, self.inspecter)
+        # cur.execute(sql)
+        sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm, layer_nm)"\
+              u"VALUES (%s, %s, %s, %s, %s, %s)"
+        cur.execute(sql, (self.inspect_id, self.extjob_id, self.receive_id, self.inspect_dttm,
+                                                                                        self.inspecter,self.layer_nm))
         self.plugin.conn.commit()
 
     def countDiffFeature(self):
@@ -770,7 +951,7 @@ class WidgetInspect(QWidget, Ui_Form):
     def hdrClickBtnMakeReport(self):
         if self.numTotal != self.numProcessed:
             rc = QMessageBox.question(self, u"확인", u"아직 검수하지 않은 객체가 {}개 있습니다.\n"
-                                                   u"그래도 검수 리포트를 작성하시겠습니까?".format(self.numTotal-self.numProcessed)
+                                                u"그래도 검수 리포트를 작성하시겠습니까?".format(self.numTotal-self.numProcessed)
                                       , QMessageBox.Yes, QMessageBox.No)
             if rc != QMessageBox.Yes:
                 return
@@ -814,10 +995,20 @@ class WidgetInspect(QWidget, Ui_Form):
         final_result = u"검수통과" if (num_reject<=0 and num_miss<=0) else u"보완후 재검수"
         fileFilter = "MS Word Files (*.docx)"
         crrTime = time.localtime()
-        # TODO: 레포트 경로 저장되게 수정
-        defFileName = u"/temp/{}_{}.docx".format(extjob_nm, time.strftime("%Y%m%d", crrTime))
+
+        conf = ConfigParser.SafeConfigParser()
+        conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
+
+        folderPath = conf.get("Dir_Info", "report_dir")
+
+        defFileName = u"{}_{}.docx".format(extjob_nm, time.strftime("%Y%m%d", crrTime))
         fileName = QFileDialog.getSaveFileName(self.plugin.iface.mainWindow(),
-            u'레포트 파일명을 입력해 주세요.', defFileName, fileFilter)
+            u'레포트 파일명을 입력해 주세요.', os.path.join(folderPath,defFileName), fileFilter)
+
+        with open(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"), "w") as confFile:
+            conf.set("Dir_Info", "report_dir", os.path.dirname(fileName))
+            conf.write(confFile)
+
         if not fileName:
             return
 
@@ -828,18 +1019,34 @@ class WidgetInspect(QWidget, Ui_Form):
                 zf.write("[Content_Types].xml")
                 zf.write("_rels/.rels")
                 zf.write("customXml/item1.xml")
+                zf.write("customXml/item2.xml")
+                zf.write("customXml/item3.xml")
                 zf.write("customXml/itemProps1.xml")
+                zf.write("customXml/itemProps2.xml")
+                zf.write("customXml/itemProps3.xml")
                 zf.write("customXml/_rels/item1.xml.rels")
+                zf.write("customXml/_rels/item2.xml.rels")
+                zf.write("customXml/_rels/item3.xml.rels")
                 zf.write("docProps/app.xml")
                 zf.write("docProps/core.xml")
+                zf.write("docProps/custom.xml")
                 zf.write("word/endnotes.xml")
                 zf.write("word/fontTable.xml")
                 zf.write("word/footnotes.xml")
                 zf.write("word/header1.xml")
+                zf.write("word/header2.xml")
                 zf.write("word/numbering.xml")
                 zf.write("word/settings.xml")
                 zf.write("word/styles.xml")
                 zf.write("word/webSettings.xml")
+                zf.write("word/_rels/settings.xml.rels")
+                zf.write("word/glossary/document.xml")
+                zf.write("word/glossary/fontTable.xml")
+                zf.write("word/glossary/numbering.xml")
+                zf.write("word/glossary/settings.xml")
+                zf.write("word/glossary/styles.xml")
+                zf.write("word/glossary/webSettings.xml")
+                zf.write("word/glossary/_rels/document.xml.rels")
                 zf.write("word/theme/theme1.xml")
 
                 # 주 문서부분
@@ -874,7 +1081,12 @@ class WidgetInspect(QWidget, Ui_Form):
                 i_rg_end = word_document.find('<!--%end for rejects%-->', i_rg_start) + len('<!--%end for rejects%-->')
 
                 if num_reject <= 0:  # 거부된 객체가 없는 경우
-                    message = u'<w:p w:rsidR="00361A42" w:rsidRDefault="00D92755" w:rsidP="008A6D62"><w:pPr><w:pStyle w:val="20"/><w:rPr><w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕" w:cstheme="minorBidi"/><w:sz w:val="18"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕"/><w:sz w:val="22"/></w:rPr><w:t>거부된 객체가 없습니다.</w:t></w:r></w:p>'
+                    message = u'<w:p w:rsidR="00361A42" w:rsidRDefault="00D92755" w:rsidP="008A6D62">' \
+                        u'<w:pPr><w:pStyle w:val="20"/><w:rPr>' \
+                        u'<w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕" w:cstheme="minorBidi"/>'\
+                        u'<w:sz w:val="18"/><w:szCs w:val="22"/></w:rPr></w:pPr><w:r><w:rPr>' \
+                        u'<w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕"/><w:sz w:val="22"/>' \
+                        u'</w:rPr><w:t>거부된 객체가 없습니다.</w:t></w:r></w:p>'
                     word_document = word_document[:i_rg_start-1] + message + word_document[i_rg_end+1:]
                 else: # 거부된 객체가 있는 경우
                     reject_rpt_tmpl = word_document[i_rg_start:i_rg_end]
@@ -935,5 +1147,132 @@ class WidgetInspect(QWidget, Ui_Form):
                 zf.write("word/_rels/document.xml.rels")
 
             QMessageBox.information(self, u"작업완료", u"검수 레포트 작성이 완료되었습니다.")
+            self.insertInspectRes(numAccept,numMiss)
+
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"레포트 작성중 오류가 발생하였습니다.\n{}".format(e))
+
+    def showAttrFeature(self):
+        try:
+            if self.inspectList != None:
+                self.dlgAttrView = DiaAttrView(self.plugin)
+                self.dlgAttrView.show()
+
+                dlgObjlist = [
+                    [self.dlgAttrView.field_nm_1, self.dlgAttrView.edt_before_1, self.dlgAttrView.edi_after_1],
+                    [self.dlgAttrView.field_nm_2, self.dlgAttrView.edt_before_2, self.dlgAttrView.edi_after_2],
+                    [self.dlgAttrView.field_nm_3, self.dlgAttrView.edt_before_3, self.dlgAttrView.edi_after_3],
+                    [self.dlgAttrView.field_nm_4, self.dlgAttrView.edt_before_4, self.dlgAttrView.edi_after_4],
+                    [self.dlgAttrView.field_nm_5, self.dlgAttrView.edt_before_5, self.dlgAttrView.edi_after_5],
+                    [self.dlgAttrView.field_nm_6, self.dlgAttrView.edt_before_6, self.dlgAttrView.edi_after_6],
+                    [self.dlgAttrView.field_nm_7, self.dlgAttrView.edt_before_7, self.dlgAttrView.edi_after_7],
+                    [self.dlgAttrView.field_nm_8, self.dlgAttrView.edt_before_8, self.dlgAttrView.edi_after_8],
+                    [self.dlgAttrView.field_nm_9, self.dlgAttrView.edt_before_9, self.dlgAttrView.edi_after_9],
+                    [self.dlgAttrView.field_nm_10, self.dlgAttrView.edt_before_10, self.dlgAttrView.edi_after_10],
+                    [self.dlgAttrView.field_nm_11, self.dlgAttrView.edt_before_11, self.dlgAttrView.edi_after_11],
+                    [self.dlgAttrView.field_nm_12, self.dlgAttrView.edt_before_12, self.dlgAttrView.edi_after_12],
+                    [self.dlgAttrView.field_nm_13, self.dlgAttrView.edt_before_13, self.dlgAttrView.edi_after_13],
+                    [self.dlgAttrView.field_nm_14, self.dlgAttrView.edt_before_14, self.dlgAttrView.edi_after_14],
+                    [self.dlgAttrView.field_nm_15, self.dlgAttrView.edt_before_15, self.dlgAttrView.edi_after_15],
+                    [self.dlgAttrView.field_nm_16, self.dlgAttrView.edt_before_16, self.dlgAttrView.edi_after_16],
+                    [self.dlgAttrView.field_nm_17, self.dlgAttrView.edt_before_17, self.dlgAttrView.edi_after_17],
+                    [self.dlgAttrView.field_nm_18, self.dlgAttrView.edt_before_18, self.dlgAttrView.edi_after_18],
+                    [self.dlgAttrView.field_nm_19, self.dlgAttrView.edt_before_19, self.dlgAttrView.edi_after_19],
+                    [self.dlgAttrView.field_nm_20, self.dlgAttrView.edt_before_20, self.dlgAttrView.edi_after_20],
+                    [self.dlgAttrView.field_nm_21, self.dlgAttrView.edt_before_21, self.dlgAttrView.edi_after_21],
+                    [self.dlgAttrView.field_nm_22, self.dlgAttrView.edt_before_22, self.dlgAttrView.edi_after_22],
+                    [self.dlgAttrView.field_nm_23, self.dlgAttrView.edt_before_23, self.dlgAttrView.edi_after_23],
+                    [self.dlgAttrView.field_nm_24, self.dlgAttrView.edt_before_24, self.dlgAttrView.edi_after_24],
+                    [self.dlgAttrView.field_nm_25, self.dlgAttrView.edt_before_25, self.dlgAttrView.edi_after_25]
+                ]
+
+                crrFeature = self.inspectList[self.crrIndex]
+                field_names = [field.name() for field in self.diff_data.pendingFields()]
+                field_names.remove(u'id')
+                field_names.remove(u'inspect_id')
+                field_names.remove(u'layer_nm')
+                field_names.remove(u'inspect_dttm')
+                field_names.remove(u'inspect_res')
+                field_names.remove(u'reject_reason')
+
+                features = []
+                if crrFeature['origin_ogc_fid'] != 0 and crrFeature['receive_ogc_fid'] != 0:
+                    request = QgsFeatureRequest().setFilterExpression(u'"origin_ogc_fid" = \'{}\''
+                                                                      .format(crrFeature['origin_ogc_fid']))
+                    originFeatures = self.maintain_data.getFeatures(request)
+                    for feature in originFeatures:
+                        features.append(feature)
+
+                originFeature = None
+                if len(features) == 1:
+                    originFeature = features[0]
+                elif len(features) == 0:
+                    pass
+                else:
+                    QMessageBox.warning(self, u"오류", u"변화없음 레이어에 중복된 데이터가 있습니다.")
+                    return
+
+                for i in range(0,len(field_names)):
+                    dlgObjlist[i][0].setText(field_names[i])
+                    dlgObjlist[i][2].setText(u'{}'.format(crrFeature[field_names[i]]))
+                    if originFeature != None:
+                        dlgObjlist[i][1].setText(u'{}'.format(originFeature[field_names[i]]))
+
+                        # TODO: 소수값 속성 비교 ( 탐지에서는 다름 / 속성보기에선 같음 )
+                        if originFeature[field_names[i]] != crrFeature[field_names[i]]:
+                            dlgObjlist[i][1].setStyleSheet("border: 1px solid red;")
+                            dlgObjlist[i][2].setStyleSheet("border: 1px solid red;")
+
+                for i in range(len(field_names), len(dlgObjlist)):
+                    dlgObjlist[i][0].setVisible(False)
+                    dlgObjlist[i][1].setVisible(False)
+                    dlgObjlist[i][2].setVisible(False)
+
+
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", u"속성 뷰어에 문제가 발생했습니다.\n{}".format(e))
+
+    # 검수 메인 테이블에 검수 결과 입력
+    # TODO: 미검수가 있는 데이터 처리
+    def insertInspectRes(self, numAccept=0, numMiss=0):
+        try:
+            cur = self.plugin.conn.cursor()
+            txtColor = ''
+
+            # 변화가 없는 경우
+            if self.numTotal == 0:
+                sql = u"update extjob.inspect_main set inspect_res = 'n' where inspect_id = '{}'"\
+                                                                                            .format(self.inspect_id)
+                txtColor = 'blue'
+
+            # 변화가 있는 경우
+            else:
+                # 모두 통과한 경우
+                if numAccept == self.numTotal:
+                    sql = u"update extjob.inspect_main set inspect_res = 'a' where inspect_id = '{}'"\
+                                                                                            .format(self.inspect_id)
+                    txtColor = 'blue'
+
+                # 거부된 객체가 있는 경우
+                else:
+                    if numMiss == 0:
+                        sql = u"update extjob.inspect_main set inspect_res = 'r' where inspect_id = '{}'"\
+                                                                                            .format(self.inspect_id)
+                        txtColor = 'red'
+
+                    else:
+                        return
+
+            cur.execute(sql)
+
+            sql = u"update extjob.inspect_main set report_dttm = '{}' where inspect_id = '{}'" \
+                .format(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), self.inspect_id)
+            cur.execute(sql)
+            self.plugin.conn.commit()
+
+            if txtColor != '':
+                self.cmb_layer_nm.setItemData(self.cmb_layer_nm.findText(self.cmb_layer_nm.currentText()),
+                                                                                    QColor(txtColor), Qt.TextColorRole)
+
+        except Exception as e:
+            QMessageBox.warning(self, u"오류", u"검수 메인 테이블에 검수결과를 등록하던 중 에러 발생.\n{}".format(e))
