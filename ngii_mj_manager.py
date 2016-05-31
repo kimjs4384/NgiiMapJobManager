@@ -136,9 +136,9 @@ class NgiiMapJobManager:
         self.menuActions = [self.showDlgExtjob, self.showDlgReceive, self.showWidgetInspect]
 
         # ==== For DEBUG
-        self.menuIcons.append('bug.png')
-        self.menuTexts.append(u'디버깅 연결')
-        self.menuActions.append(self.attachPyDev)
+        # self.menuIcons.append('bug.png')
+        # self.menuTexts.append(u'디버깅 연결')
+        # self.menuActions.append(self.attachPyDev)
         # ==== For DEBUG
 
         self.toolbar = self.iface.addToolBar(self.mainMenuTitle)

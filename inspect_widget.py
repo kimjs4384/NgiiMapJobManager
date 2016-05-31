@@ -724,11 +724,7 @@ class WidgetInspect(QWidget, Ui_Form):
         self.extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
         self.inspecter = self.edt_inpector.text()
 
-        # TODO: Secure Coding
-        # sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm) " \
-        #       u"VALUES ('{}','{}','{}','{}','{}')"\
-        #     .format(self.inspect_id, self.extjob_id, self.receive_id, inspect_dttm, self.inspecter)
-        # cur.execute(sql)
+        # Secure Coding
         sql = u"INSERT INTO extjob.inspect_main(inspect_id, extjob_id, receive_id, start_dttm, inspecter_nm) " \
               u"VALUES (%s, %s, %s, %s, %s)"
         cur.execute(sql, (self.inspect_id, self.extjob_id, self.receive_id, self.inspect_dttm, self.inspecter))
@@ -832,34 +828,18 @@ class WidgetInspect(QWidget, Ui_Form):
                 zf.write("[Content_Types].xml")
                 zf.write("_rels/.rels")
                 zf.write("customXml/item1.xml")
-                zf.write("customXml/item2.xml")
-                zf.write("customXml/item3.xml")
                 zf.write("customXml/itemProps1.xml")
-                zf.write("customXml/itemProps2.xml")
-                zf.write("customXml/itemProps3.xml")
                 zf.write("customXml/_rels/item1.xml.rels")
-                zf.write("customXml/_rels/item2.xml.rels")
-                zf.write("customXml/_rels/item3.xml.rels")
                 zf.write("docProps/app.xml")
                 zf.write("docProps/core.xml")
-                zf.write("docProps/custom.xml")
                 zf.write("word/endnotes.xml")
                 zf.write("word/fontTable.xml")
                 zf.write("word/footnotes.xml")
                 zf.write("word/header1.xml")
-                zf.write("word/header2.xml")
                 zf.write("word/numbering.xml")
                 zf.write("word/settings.xml")
                 zf.write("word/styles.xml")
                 zf.write("word/webSettings.xml")
-                zf.write("word/_rels/settings.xml.rels")
-                zf.write("word/glossary/document.xml")
-                zf.write("word/glossary/fontTable.xml")
-                zf.write("word/glossary/numbering.xml")
-                zf.write("word/glossary/settings.xml")
-                zf.write("word/glossary/styles.xml")
-                zf.write("word/glossary/webSettings.xml")
-                zf.write("word/glossary/_rels/document.xml.rels")
                 zf.write("word/theme/theme1.xml")
 
                 # 주 문서부분

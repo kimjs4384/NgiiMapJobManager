@@ -31,8 +31,6 @@ class WidgetContainer(object):
     def __unload(self):
         self.__dockwidget.close()
         self.__iface.removeDockWidget( self.__dockwidget )
-        # 이벤트 헨들러가 자동제거 되지 않아 강제로 제거
-        # self.__oloWidget.disconnectGlobalSignal()
         del self.__oloWidget
         self.__dockwidget = None
 
