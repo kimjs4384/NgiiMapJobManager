@@ -300,6 +300,8 @@ class NgiiMapJobManager:
             sql = u"select tablename from pg_tables where schemaname = 'nfsd'"
             cur.execute(sql)
             results = cur.fetchall()
+
+            extFile_list = []
             for result in results:
                 layer_nm = result[0]
                 sql = "select column_name from information_schema.columns " \
@@ -358,10 +360,37 @@ class NgiiMapJobManager:
                 with open(os.path.join(folderPath, '{}.cpg'.format(layer_nm)), "w") as confFile:
                     confFile.write('UTF-8')
 
-            # 모든 작업이 정상적일 때만 커밋하게 수정됨
-            self.conn.commit()
-            # TODO: 모든 레이어가 문제 없을 때만 메시지 보이게 보완
-            QMessageBox.information(self.dlgExtjob, u"작업 완료", u"작업용 수치지도 생성이 완료되었습니다.")
+                extFile_list.append(layer_nm)
+
+            notExtFile = []
+            for file in glob(os.path.join(folderPath,"*.shp")):
+                file_nm = os.path.splitext(os.path.basename(file))[0]
+
+                if not file_nm in extFile_list:
+                    notExtFile.append(file_nm)
+
+            if len(notExtFile) != 0:
+                msg = '\n - '.join(notExtFile)
+                rc = QMessageBox.question(self.dlgExtjob, u"확인", u"이전에 생성된 데이터가 있습니다.\n"
+                                                                 u" - {}\n"
+                                                       u"지우시겠습니까 ?".format(msg),
+                                          QMessageBox.Yes, QMessageBox.No)
+                if rc == QMessageBox.Yes:
+                    for f in notExtFile:
+                        for rmFile in glob(os.path.join(folderPath , '{}.*'.format(f))):
+                            os.remove(rmFile)
+
+            for extFile in os.listdir(folderPath):
+                if os.path.splitext(extFile)[1] == '.shp':
+                    extFile_nm = os.path.splitext(extFile)[0]
+                    if extFile_nm in extFile_list:
+                        extFile_list.remove(os.path.splitext(extFile)[0])
+
+            if len(extFile_list) == 0 :
+                QMessageBox.information(self.dlgExtjob, u"작업 완료", u"작업용 수치지도 생성이 완료되었습니다.")
+            else:
+                layer_list = ','.join(extFile_list)
+                QMessageBox.information(self.dlgExtjob, u"작업 오류", u"{}\n 위 데이터는 생성되지 않았습니다.")
 
         except Exception as e:
             self.conn.rollback()

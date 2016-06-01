@@ -1217,7 +1217,6 @@ class WidgetInspect(QWidget, Ui_Form):
                     if originFeature != None:
                         dlgObjlist[i][1].setText(u'{}'.format(originFeature[field_names[i]]))
 
-                        # TODO: 소수값 속성 비교 ( 탐지에서는 다름 / 속성보기에선 같음 )
                         if originFeature[field_names[i]] != crrFeature[field_names[i]]:
                             dlgObjlist[i][1].setStyleSheet("border: 1px solid red;")
                             dlgObjlist[i][2].setStyleSheet("border: 1px solid red;")
@@ -1232,7 +1231,6 @@ class WidgetInspect(QWidget, Ui_Form):
             QMessageBox.warning(self, u"오류", u"속성 뷰어에 문제가 발생했습니다.\n{}".format(e))
 
     # 검수 메인 테이블에 검수 결과 입력
-    # TODO: 미검수가 있는 데이터 처리
     def insertInspectRes(self, numAccept=0, numMiss=0):
         try:
             cur = self.plugin.conn.cursor()

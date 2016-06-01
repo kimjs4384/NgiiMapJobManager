@@ -504,7 +504,6 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 check = column_list.difference(field_list)
 
                 if len(check) != 0:
-                    print list(check)
                     check_res.append({'file_nm': layer_nm, 'fields': list(check)})
 
             if len(check_res) != 0:
@@ -517,7 +516,7 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     omit_field = ','.join(fields)
                     msg += u'파일명 : {}\n - 누락된 칼럼 : {}\n\n'.format(file_nm, omit_field)
 
-                QMessageBox.warning(self, u"오류", msg)
+                QMessageBox.warning(self, u"누락된 칼럼", msg)
 
                 self.failLayer += u"- {}.shp (칼럼누락)\n".format(layer_nm)
                 return False

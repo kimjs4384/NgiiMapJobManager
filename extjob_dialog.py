@@ -89,7 +89,9 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         self.btn_add_admin.clicked.connect(self.hdrClickAddAdmin)
         self.btn_add_mapbox.clicked.connect(self.hdrClickAddMapbox)
         self.btn_gendata.clicked.connect(self.hdrClickGenData)
-        #self.close.connect(self.hdrClose)
+        # self.date_mapext_dttm.dateChanged.connect(self.checkMapextDate)
+        self.date_basedata_dt.dateChanged.connect(self.checkBasedataDate)
+        # self.close.connect(self.hdrClose)
 
     # 대화상자 닫히는 것은 그냥 이벤트 캐치로 안되고 부모 클래스 함수를 오버라이드 해야 한다.
     def closeEvent(self, evnt):
@@ -354,3 +356,16 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         with open(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"), "w") as confFile:
             conf.set("Worker_nm", worker_nm.encode('utf-8'), worker_nm.encode('utf-8'))
             conf.write(confFile)
+
+    # def checkMapextDate(self):
+    #     date = self.date_mapext_dttm.date()
+    #     crr_date = QDate.currentDate()
+    #     if date > crr_date:
+    #         self.date_mapext_dttm.setDate(crr_date)
+
+    def checkBasedataDate(self):
+        date = self.date_basedata_dt.date()
+        crr_date = QDate.currentDate()
+        if date > crr_date:
+            self.date_basedata_dt.setDate(crr_date)
+
