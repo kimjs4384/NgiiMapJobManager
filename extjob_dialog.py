@@ -28,6 +28,7 @@ from PyQt4.QtGui import *
 from PyQt4.QtCore import *
 import psycopg2
 import ConfigParser
+from glob import glob
 
 from ui.extjob_dialog_base import Ui_Dialog
 
@@ -341,6 +342,22 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         if folderPath:
             # 대화상자 닫고
             self.close()
+
+            fileInFolder = glob(os.path.join(folderPath,'*.shp'))
+            if len(fileInFolder) != 0:
+                rc = QMessageBox.question(self, u"확인", u"폴더가 비어있지 않습니다\n"
+                                                           u"파일(들)을 삭제하고 진행하시겠습니까?\n"
+                                                            u"(폴더 내 모든 파일이 삭제 됩니다.)",
+                                                            QMessageBox.Yes, QMessageBox.No)
+                if rc == QMessageBox.Yes:
+                    for rmFile in glob(os.path.join(folderPath,"*")):
+                        os.remove(rmFile)
+                else:
+                    rc = QMessageBox.question(self, u"확인", u"그냥 진행하겠습니까??\n"
+                                                                     u"외주 데이터에 문제가 발생할 수도 있습니다.",
+                                              QMessageBox.Yes, QMessageBox.No)
+                    if rc != QMessageBox.Yes:
+                        return
 
             # 데이터 생산
             self.plugin.generateDataFiles(folderPath)

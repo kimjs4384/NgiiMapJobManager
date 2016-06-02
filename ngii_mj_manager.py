@@ -31,6 +31,7 @@ from qgis.gui import QgsRubberBand
 from subprocess import check_output
 import sys
 from glob import glob
+import tempfile
 
 # Initialize Qt resources from file resources.py
 # Import the code for the dialog
@@ -303,6 +304,8 @@ class NgiiMapJobManager:
 
             extFile_list = []
             for result in results:
+                temp_name = next(tempfile._get_candidate_names())
+                temp_dir = tempfile.gettempdir()
                 layer_nm = result[0]
                 sql = "select column_name from information_schema.columns " \
                       "where table_schema = 'nfsd' and table_name = '{}' and ordinal_position = 3".format(layer_nm)
@@ -339,7 +342,7 @@ class NgiiMapJobManager:
                             postgres_escape_string(worker_nm), layer_nm, extjob_id, layer_nm)
 
                 # ogr2ogr을 이용해 DB를 Shape으로 내보내기
-                shapeFileName = os.path.join(folderPath, layer_nm)
+                shapeFileName = os.path.join(temp_dir, temp_name)
                 # 윈도우가 아닌 경우 PATH 추가
                 ogr2ogrPath = None
                 if sys.platform == "win32":
@@ -357,34 +360,40 @@ class NgiiMapJobManager:
                             self.account, self.database, self.password, sql)
                 rc = check_output(command.decode(), shell=True)
 
-                with open(os.path.join(folderPath, '{}.cpg'.format(layer_nm)), "w") as confFile:
+                with open(os.path.join(temp_dir, '{}.cpg'.format(temp_name)), "w") as confFile:
                     confFile.write('UTF-8')
+
+                for temp_file in glob(os.path.join(temp_dir,u"{}.*".format(temp_name))):
+                    file_ext = os.path.splitext(temp_file)[1]
+                    ext_file = os.path.join(folderPath,layer_nm + file_ext)
+                    os.rename(temp_file,ext_file)
 
                 extFile_list.append(layer_nm)
 
-            notExtFile = []
-            for file in glob(os.path.join(folderPath,"*.shp")):
-                file_nm = os.path.splitext(os.path.basename(file))[0]
-
-                if not file_nm in extFile_list:
-                    notExtFile.append(file_nm)
-
-            if len(notExtFile) != 0:
-                msg = '\n - '.join(notExtFile)
-                rc = QMessageBox.question(self.dlgExtjob, u"확인", u"이전에 생성된 데이터가 있습니다.\n"
-                                                                 u" - {}\n"
-                                                       u"지우시겠습니까 ?".format(msg),
-                                          QMessageBox.Yes, QMessageBox.No)
-                if rc == QMessageBox.Yes:
-                    for f in notExtFile:
-                        for rmFile in glob(os.path.join(folderPath , '{}.*'.format(f))):
-                            os.remove(rmFile)
+            # 만들지 않았는데 있는 데이터 처리
+            # notExtFile = []
+            # for file in glob(os.path.join(folderPath,"*.shp")):
+            #     file_nm = os.path.splitext(os.path.basename(file))[0]
+            #
+            #     if not file_nm in extFile_list:
+            #         notExtFile.append(file_nm)
+            #
+            # if len(notExtFile) != 0:
+            #     msg = '\n - '.join(notExtFile)
+            #     rc = QMessageBox.question(self.dlgExtjob, u"확인", u"이전에 생성된 데이터가 있습니다.\n"
+            #                                                      u" - {}\n"
+            #                                            u"지우시겠습니까 ?".format(msg),
+            #                               QMessageBox.Yes, QMessageBox.No)
+            #     if rc == QMessageBox.Yes:
+            #         for f in notExtFile:
+            #             for rmFile in glob(os.path.join(folderPath , '{}.*'.format(f))):
+            #                 os.remove(rmFile)
 
             for extFile in os.listdir(folderPath):
                 if os.path.splitext(extFile)[1] == '.shp':
                     extFile_nm = os.path.splitext(extFile)[0]
                     if extFile_nm in extFile_list:
-                        extFile_list.remove(os.path.splitext(extFile)[0])
+                        extFile_list.remove(extFile_nm)
 
             if len(extFile_list) == 0 :
                 QMessageBox.information(self.dlgExtjob, u"작업 완료", u"작업용 수치지도 생성이 완료되었습니다.")
