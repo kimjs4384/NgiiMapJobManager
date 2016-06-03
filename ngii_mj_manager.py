@@ -32,6 +32,8 @@ from subprocess import check_output
 import sys
 from glob import glob
 import tempfile
+from osgeo import ogr
+from osgeo import osr
 
 # Initialize Qt resources from file resources.py
 # Import the code for the dialog
@@ -404,3 +406,160 @@ class NgiiMapJobManager:
         except Exception as e:
             self.conn.rollback()
             QMessageBox.warning(self.dlgExtjob, u"오류", str(e))
+
+    def dycdToGeom(self, dycd, epsg_cd=4326):
+        # 숫자로만 되어 있지 않으면 오류
+        try:
+            int(dycd)
+        except ValueError:
+            return None
+
+        # 도엽코드가 5자보다 짧으면 오류
+        if len(dycd) < 5:
+            return None
+
+        # 도엽코드 길이에 따라
+        if len(dycd) == 5:
+            scale = 50000
+        elif len(dycd) == 6:
+            scale = 25000
+        elif len(dycd) == 7:
+            scale = 10000
+        elif len(dycd) == 8:
+            scale = 5000
+        elif len(dycd) == 9:
+            scale = 1000
+        else:  # 9자보다 긴 경우 오류
+            return None
+
+        # 5만 도엽코드
+        dycd_50k = dycd[:5]
+
+        # 없는 5만 도엽인 경우 오류
+        if DYCD_50K_LIST.count(dycd_50k) < 1:
+            return None
+
+        i_lat = int(dycd[:2])
+        i_lon = int(dycd[2:3])
+        idx_50k = int(dycd[3:5])
+
+        base_lat = i_lat
+        base_lon = 130+i_lon if i_lon<=2 else 120+i_lon
+
+        y_idx_50k = int((idx_50k-1) / 4)
+        x_idx_50k = (idx_50k-1) % 4
+
+        base_50k_lat = base_lat + 1 - 0.25 * y_idx_50k
+        base_50k_lon = base_lon + 0.25 * x_idx_50k
+
+        # 5만 도엽 기준위치 예외 처리
+        # 제주
+        if dycd_50k >= '33605' and dycd_50k <= '33608':
+            base_50k_lat += -0.1
+        # 서귀포
+        elif dycd_50k >= '33609' and dycd_50k <= '33612':
+            base_50k_lat += -0.1
+            base_50k_lon += -5.0/60.0
+        # 마라도
+        elif dycd_50k == '33614':
+            base_50k_lat += -0.1
+            base_50k_lon += -0.075
+        # 울릉도
+        elif dycd_50k == '37012':
+            base_50k_lat += 0.075
+
+        # 스케일별 영역 확정
+        if scale == 50000:
+            max_lat = base_50k_lat
+            min_lat = max_lat - 0.25
+            min_lon = base_50k_lon
+            max_lon = min_lon + 0.25
+        elif scale == 25000:
+            idx_25k = int(dycd[5:6])
+            if idx_25k > 4:  # 4 이상의 인덱스면 오류
+                return None
+            y_idx_25k = int((idx_25k-1) / 2)
+            x_idx_25k = (idx_25k-1) % 2
+            max_lat = base_50k_lat - y_idx_25k * 0.125
+            min_lat = max_lat - 0.125
+            min_lon = base_50k_lon + x_idx_25k * 0.125
+            max_lon = min_lon + 0.125
+        elif scale == 10000 or scale == 1000:
+            idx_10k = int(dycd[5:7])
+            if idx_10k > 25:  # 25 이상의 인덱스면 오류
+                return None
+            y_idx_10k = int((idx_10k-1) / 5)
+            x_idx_10k = (idx_10k-1) % 5
+
+            if scale == 10000:
+                max_lat = base_50k_lat - y_idx_10k * 0.05
+                min_lat = max_lat - 0.05
+                min_lon = base_50k_lon + x_idx_10k * 0.05
+                max_lon = min_lon + 0.05
+            else:  # 1000 축척
+                idx_1k = int(dycd[7:9])
+                if idx_1k > 100:  # 100 이상 인덱스면 오류
+                    return None
+                y_idx_1k = int((idx_1k-1) / 10)
+                x_idx_1k = (idx_1k-1) % 10
+                max_lat = base_50k_lat - y_idx_10k * 0.05 - y_idx_1k * 0.005
+                min_lat = max_lat - 0.005
+                min_lon = base_50k_lon + x_idx_10k * 0.05 + x_idx_1k * 0.005
+                max_lon = min_lon + 0.005
+        elif scale == 5000:
+            idx_5k = int(dycd[5:8])
+            if idx_5k > 100:  # 100 이상의 인덱스면 오류
+                return None
+            y_idx_5k = int((idx_5k-1) / 10)
+            x_idx_5k = (idx_5k-1) % 10
+            max_lat = base_50k_lat - y_idx_5k * 0.025
+            min_lat = max_lat - 0.025
+            min_lon = base_50k_lon + x_idx_5k * 0.025
+            max_lon = min_lon + 0.025
+
+        # WKT 리턴
+        str_res = "POLYGON (({min_x} {min_y}, {max_x} {min_y}, {max_x} {max_y}, {min_x} {max_y}, {min_x} {min_y}))"\
+            .format(min_x=min_lon, min_y=min_lat, max_x=max_lon, max_y=max_lat)
+
+        # 좌표계 변환
+        # https://pcjericks.github.io/py-gdalogr-cookbook/projection.html
+        source = osr.SpatialReference()
+        source.ImportFromEPSG(4326)
+
+        target = osr.SpatialReference()
+        target.ImportFromEPSG(epsg_cd)
+
+        transform = osr.CoordinateTransformation(source, target)
+
+        geom = ogr.CreateGeometryFromWkt(str_res)
+        geom.Transform(transform)
+
+        res = geom.ExportToWkt()
+        return res
+
+
+DYCD_50K_LIST = ['33601', '33602', '33603', '33604', '33605', '33606', '33607', '33608', '33609', '33610',
+    '33611', '33612', '33614', '34502', '34504', '34505', '34506', '34507', '34508', '34509',
+    '34510', '34512', '34513', '34514', '34516', '34601', '34602', '34603', '34604', '34605',
+    '34606', '34607', '34608', '34609', '34610', '34611', '34612', '34613', '34614', '34615',
+    '34616', '34701', '34702', '34703', '34704', '34705', '34706', '34707', '34708', '34709',
+    '34710', '34711', '34712', '34713', '34714', '34715', '34801', '34802', '34803', '34804',
+                 '34805', '34806', '34807', '34809', '34810', '35512', '35516', '35601', '35602', '35603',
+                 '35604', '35605', '35606', '35607', '35608', '35609', '35610', '35611', '35612', '35613',
+                 '35614', '35615', '35616', '35701', '35702', '35703', '35704', '35705', '35706', '35707',
+                 '35708', '35709', '35710', '35711', '35712', '35713', '35714', '35715', '35716', '35801',
+                 '35802', '35803', '35804', '35805', '35806', '35807', '35808', '35809', '35810', '35811',
+                 '35812', '35813', '35814', '35815', '35816', '35901', '35902', '35903', '35905', '35906',
+                 '35909', '35910', '35913', '35914', '36503', '36504', '36507', '36508', '36516', '36601',
+                 '36602', '36603', '36604', '36605', '36606', '36607', '36608', '36609', '36610', '36611',
+                 '36612', '36613', '36614', '36615', '36616', '36701', '36702', '36703', '36704', '36705',
+                 '36706', '36707', '36708', '36709', '36710', '36711', '36712', '36713', '36714', '36715',
+                 '36716', '36801', '36802', '36803', '36804', '36805', '36806', '36807', '36808', '36809',
+                 '36810', '36811', '36812', '36813', '36814', '36815', '36816', '36901', '36902', '36905',
+                 '36906', '36909', '36910', '36913', '36914', '36915', '37012', '37116', '37516', '37604',
+                 '37606', '37607', '37608', '37609', '37610', '37611', '37612', '37613', '37614', '37615',
+                 '37616', '37701', '37702', '37703', '37704', '37705', '37706', '37707', '37708', '37709',
+                 '37710', '37711', '37712', '37713', '37714', '37715', '37716', '37801', '37802', '37803',
+                 '37804', '37805', '37806', '37807', '37808', '37809', '37810', '37811', '37812', '37813',
+                 '37814', '37815', '37816', '37905', '37909', '37910', '37913', '37914', '38713', '38714',
+                 '38715', '38716', '38810', '38811', '38813', '38814', '38815']
