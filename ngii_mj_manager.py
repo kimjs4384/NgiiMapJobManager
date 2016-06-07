@@ -308,10 +308,23 @@ class NgiiMapJobManager:
                 temp_dir = tempfile.gettempdir()
                 layer_nm = result[0]
                 sql = "select column_name from information_schema.columns " \
-                      "where table_schema = 'nfsd' and table_name = '{}' and ordinal_position = 3".format(layer_nm)
+                      "where table_schema = 'nfsd' and table_name = '{}' order by ordinal_position asc".format(layer_nm)
                 cur.execute(sql)
-                col = cur.fetchone()
-                column_nm = col[0]
+                cols = cur.fetchall()
+                col = []
+                for col_nm in cols:
+                    col.append(col_nm[0])
+
+                column_nm = col[2]
+
+                if 'create_dttm' in col:
+                    col.remove('create_dttm')
+                if 'delete_dttm' in col:
+                    col.remove('delete_dttm')
+                if 'announce_dttm' in col:
+                    col.remove('announce_dttm')
+                if 'realworld_dttm' in col:
+                    col.remove('realworld_dttm')
 
                 #겹치는 데이터가 없을경우 건너 뜀
                 sql = u"SELECT count(ogc_fid) FROM nfsd.{} " \
@@ -334,11 +347,11 @@ class NgiiMapJobManager:
 
                 self.conn.commit()
 
-                sql = u"SELECT {}.*, '{}' as extjob_id, " \
+                sql = u"SELECT {}, '{}' as extjob_id, " \
                       u"'{}' as mapext_dttm, {} as basedata_nm, '{}' as basedata_dt,{} as worker_nm FROM nfsd.{}" \
                       u" WHERE ogc_fid in (SELECT ogc_fid from extjob.extjob_objlist WHERE extjob_id = '{}' " \
                       u"and layer_nm = '{}') " \
-                    .format(layer_nm, extjob_id, timestemp, postgres_escape_string(basedata_nm), basedata_dt,
+                    .format(','.join(col), extjob_id, timestemp, postgres_escape_string(basedata_nm), basedata_dt,
                             postgres_escape_string(worker_nm), layer_nm, extjob_id, layer_nm)
 
                 # ogr2ogr을 이용해 DB를 Shape으로 내보내기
