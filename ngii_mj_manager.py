@@ -415,3 +415,4 @@ class NgiiMapJobManager:
         except Exception as e:
             self.conn.rollback()
             QMessageBox.warning(self.dlgExtjob, u"오류", str(e))
+
