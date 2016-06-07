@@ -323,8 +323,6 @@ class NgiiMapJobManager:
                     col.remove('delete_dttm')
                 if 'announce_dttm' in col:
                     col.remove('announce_dttm')
-                if 'realworld_dttm' in col:
-                    col.remove('realworld_dttm')
 
                 #겹치는 데이터가 없을경우 건너 뜀
                 sql = u"SELECT count(ogc_fid) FROM nfsd.{} " \
