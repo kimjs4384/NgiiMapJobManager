@@ -685,7 +685,7 @@ class Ui_Form(object):
         QtCore.QMetaObject.connectSlotsByName(Form)
 
     def retranslateUi(self, Form):
-        Form.setWindowTitle(_translate("Form", "Form", None))
+        Form.setWindowTitle(_translate("Form", "속성보기", None))
         self.btn_ok.setText(_translate("Form", "확 인", None))
         self.label_2.setText(_translate("Form", "Field_name", None))
         self.label.setText(_translate("Form", "Before", None))

@@ -622,6 +622,16 @@ class WidgetInspect(QWidget, Ui_Form):
         all_column_nm.remove('ogc_fid')
         all_column_nm.remove('wkb_geometry')
 
+        if 'create_dttm' in all_column_nm:
+            all_column_nm.remove('create_dttm')
+        if 'delete_dttm' in all_column_nm:
+            all_column_nm.remove('delete_dttm')
+        if 'announce_dttm' in all_column_nm:
+            all_column_nm.remove('announce_dttm')
+        if 'realworld_dttm' in all_column_nm:
+            all_column_nm.remove('realworld_dttm')
+
+
         self.column_sql = ','.join(all_column_nm)
 
         self.id_column = all_column_nm[0]

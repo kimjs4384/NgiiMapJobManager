@@ -290,11 +290,14 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                     # 수정된 테이블 생성
                     # TODO: dbf 파일의 인코딩 확인하여 결정하게 해야 함
 
+                    self.getConnetionInfo()
+
                     command = u'{}ogr2ogr ' \
-                              u'--config SHAPE_ENCODING UTF-8 -append -a_srs EPSG:5179 ' \
-                              u'-f PostgreSQL PG:"host=localhost user=postgres dbname=sdmc password=postgres" ' \
+                              u'--config SHAPE_ENCODING UTF-8 -a_srs EPSG:5179 ' \
+                              u'-f PostgreSQL PG:"host={} user={} dbname={} password={}" ' \
                               u'{} -nln extjob.{} -nlt PROMOTE_TO_MULTI '\
-                              .format(ogr2ogrPath, shp_path, table_nm)
+                              .format(ogr2ogrPath,self.ip_address,
+                                                    self.account, self.database, self.password, shp_path, table_nm)
                     rc = check_output(command.encode(), shell=True)
 
                     sql = u"alter table extjob.{0}_{1} rename basedata_n to basedata_nm; " \
@@ -491,6 +494,15 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
                 column_list.remove('ogc_fid')
                 column_list.remove('wkb_geometry')
 
+                if 'create_dttm' in column_list:
+                    column_list.remove('create_dttm')
+                if 'delete_dttm' in column_list:
+                    column_list.remove('delete_dttm')
+                if 'announce_dttm' in column_list:
+                    column_list.remove('announce_dttm')
+                if 'realworld_dttm' in column_list:
+                    column_list.remove('realworld_dttm')
+
                 # shp의 필드명 가져오기
                 shp = os.path.join(self.edt_data_folder.text(), fileName)
                 data = ogr.Open(shp)
@@ -596,3 +608,18 @@ class DlgReceive(QtGui.QDialog, Ui_Dialog):
 
         except Exception as e:
             QMessageBox.warning(self, u"오류", u"외주 ID를 검사하던 중 에러가 발생했습니다.\n{}\n{}".format(layer_nm,e))
+
+    def getConnetionInfo(self):
+        try:
+            conf = ConfigParser.SafeConfigParser()
+
+            conf.read(os.path.join(os.path.dirname(__file__), "conf", "NgiiMapJobManager.conf"))
+
+            self.ip_address = conf.get("Connection_Info", "pgIp")
+            self.port = conf.get("Connection_Info", "pgPort")
+            self.database = conf.get("Connection_Info", "pgDb")
+            self.account = conf.get("Connection_Info", "pgAccount")
+            self.password = conf.get("Connection_Info", "pgPw")
+
+        except Exception as e:
+            print e
