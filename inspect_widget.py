@@ -26,7 +26,6 @@ import os
 from PyQt4 import QtGui, uic
 from PyQt4.QtGui import *
 from PyQt4.QtCore import *
-import psycopg2
 import time
 import ConfigParser
 import zipfile
@@ -182,7 +181,6 @@ class WidgetInspect(QWidget, Ui_Form):
             results = cur.fetchall()
 
             if len(results) > 0:
-                QMessageBox.warning(self, u"여기 ???", u'{}'.format(results))
                 for receiveId in results:
                     self.cmb_receive_id.addItem(receiveId[0])
 
@@ -796,12 +794,23 @@ class WidgetInspect(QWidget, Ui_Form):
         cur.execute(sql)
 
     def addLayers(self):
-        self.makeColumnSql(False)
-
         QgsMapLayerRegistry.instance().removeAllMapLayers()
         # TODO: 처음 초기화 됐을때는 ?!
         # if self.maintain_data != None and self.diff_data != None:
         #     QgsMapLayerRegistry.instance().removeMapLayers([self.maintain_data, self.diff_data])
+
+        canvas = self.plugin.iface.mapCanvas()
+        canvas.mapRenderer().setProjectionsEnabled(True)
+        canvas.mapRenderer().setDestinationCrs(QgsCoordinateReferenceSystem(5179))
+
+        # 배경자료 띄우기
+        # fileName = "/Users/jsKim-pc/Desktop/2014_raster.tif"
+        # fileInfo = QFileInfo(fileName)
+        # baseName = fileInfo.baseName()
+        # rlayer = QgsRasterLayer(fileName, baseName)
+        # QgsMapLayerRegistry.instance().addMapLayer(rlayer)
+
+        self.makeColumnSql(False)
 
         uri = QgsDataSourceURI()
 
@@ -898,7 +907,6 @@ class WidgetInspect(QWidget, Ui_Form):
 
         # 변경된 데이터가 없을 경우
         if self.numTotal <= 0:
-            canvas = self.plugin.iface.mapCanvas()
             canvas.setExtent(self.maintain_data.extent())
             canvas.refresh()
             self.insertInspectRes()

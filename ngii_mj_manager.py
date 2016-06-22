@@ -349,11 +349,16 @@ class NgiiMapJobManager:
                 self.conn.commit()
 
                 sql = u"SELECT {}, '{}' as extjob_id, " \
-                      u"'{}' as mapext_dttm, {} as basedata_nm, '{}' as basedata_dt,{} as worker_nm FROM nfsd.{}" \
+                      u"'{}' as mapext_dttm, {} as basedata_nm, '{}' as basedata_dt,{} as worker_nm FROM " \
+                      u"(" \
+                      u"select * from nfsd.{} where create_dttm < '{}'" \
+                      u"except select * from nfsd.{} where delete_dttm < '{}' " \
+                      u") as foo" \
                       u" WHERE ogc_fid in (SELECT ogc_fid from extjob.extjob_objlist WHERE extjob_id = '{}' " \
                       u"and layer_nm = '{}') " \
                     .format(','.join(col), extjob_id, timestemp, postgres_escape_string(basedata_nm), basedata_dt,
-                            postgres_escape_string(worker_nm), layer_nm, extjob_id, layer_nm)
+                            postgres_escape_string(worker_nm), layer_nm,timestemp,
+                            layer_nm,timestemp, extjob_id, layer_nm)
 
                 # ogr2ogr을 이용해 DB를 Shape으로 내보내기
                 shapeFileName = os.path.join(temp_dir, temp_name)
