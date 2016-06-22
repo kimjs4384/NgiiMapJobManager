@@ -166,6 +166,8 @@ class WidgetInspect(QWidget, Ui_Form):
                 self.cmb_extjob_nm.setItemData(self.cmb_extjob_nm.count()-1, extjob_id)
                 self.date_basedata_dt.setDate(QDate.fromString(basedata_dt.isoformat(),'yyyy-MM-dd'))
 
+            self.searchReceiveId()
+
         except Exception as e:
             QMessageBox.warning(self, "SQL ERROR", str(e))
 
