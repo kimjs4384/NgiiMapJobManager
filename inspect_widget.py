@@ -78,7 +78,7 @@ class WidgetInspect(QWidget, Ui_Form):
         self.cmb_worker_nm.currentIndexChanged.connect(self.hdrCmbWorkerIndexChange)
         self.date_mapext_dttm.dateChanged.connect(self.hdrCmbWorkerIndexChange)
         self.cmb_receive_id.currentIndexChanged.connect(self.addLayerList)
-        self.cmb_extjob_nm.currentIndexChanged.connect(self.hdrCmbExtjobNmIndexChange)
+        self.cmb_extjob_nm.currentIndexChanged.connect(self.searchReceiveId)
         self.cmb_layer_nm.currentIndexChanged.connect(self.refreshUI)
         self.btn_start_inspect.clicked.connect(self.hdrClickBtnStartInspect)
         self.btn_next.clicked.connect(self.hdrClickBtnNext)
@@ -166,22 +166,29 @@ class WidgetInspect(QWidget, Ui_Form):
                 self.cmb_extjob_nm.setItemData(self.cmb_extjob_nm.count()-1, extjob_id)
                 self.date_basedata_dt.setDate(QDate.fromString(basedata_dt.isoformat(),'yyyy-MM-dd'))
 
+        except Exception as e:
+            QMessageBox.warning(self, "SQL ERROR", str(e))
+
+    def searchReceiveId(self):
+        try:
+            cur = self.plugin.conn.cursor()
             sel_extjob_id = self.cmb_extjob_nm.itemData(self.cmb_extjob_nm.currentIndex())
+
             sql = u"select receive_id from (select * from extjob.receive_main where extjob_id = '{}') as ext " \
                   u"group by receive_id order by receive_id asc".format(sel_extjob_id)
             cur.execute(sql)
             results = cur.fetchall()
 
-            for result in results:
-                self.cmb_receive_id.addItem(result[0])
+            if len(results) > 0:
+                QMessageBox.warning(self, u"여기 ???", u'{}'.format(results))
+                for receiveId in results:
+                    self.cmb_receive_id.addItem(receiveId[0])
 
-            sql = u"select workarea_txt from extjob.extjob_main where extjob_id = '{}'".format(sel_extjob_id)
-            cur.execute(sql)
-            result = cur.fetchone()
-            self.workarea_txt = result[0]
+                sql = u"select workarea_txt from extjob.extjob_main where extjob_id = '{}'".format(sel_extjob_id)
+                cur.execute(sql)
+                result = cur.fetchone()
 
-            # for result in results:
-            #     self.cmb_layer_nm.addItem(result[2])
+                self.workarea_txt = result[0]
 
         except Exception as e:
             QMessageBox.warning(self, "SQL ERROR", str(e))

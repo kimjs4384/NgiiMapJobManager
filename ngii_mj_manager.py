@@ -304,7 +304,7 @@ class NgiiMapJobManager:
 
             extFile_list = []
             for result in results:
-                if result[0] == 'nf_a_g01102_lite':
+                if result[0] == 'nf_a_g01102_lite' or result[0] == 'scls':
                     continue
 
                 temp_name = next(tempfile._get_candidate_names())
