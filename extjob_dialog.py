@@ -123,8 +123,7 @@ class DlgExtjob(QtGui.QDialog, Ui_Dialog):
         # 작업지시일과 업체명 합쳐 작업명으로
         worker_nm = self.cmb_worker_nm.currentText()
         date = self.date_mapext_dttm.date()
-
-        title = u"{}_{}".format(date.toString('yyyyMd'), worker_nm)
+        title = u"{}_{}".format(date.toString('yyyyMMdd'), worker_nm)
         self.edt_extjob_nm.setText(title)
 
     def hdrClickSelectFile(self):

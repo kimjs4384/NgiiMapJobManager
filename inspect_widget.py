@@ -804,11 +804,16 @@ class WidgetInspect(QWidget, Ui_Form):
         canvas.mapRenderer().setDestinationCrs(QgsCoordinateReferenceSystem(5179))
 
         # 배경자료 띄우기
-        # fileName = "/Users/jsKim-pc/Desktop/2014_raster.tif"
-        # fileInfo = QFileInfo(fileName)
-        # baseName = fileInfo.baseName()
-        # rlayer = QgsRasterLayer(fileName, baseName)
-        # QgsMapLayerRegistry.instance().addMapLayer(rlayer)
+        cur = self.plugin.conn.cursor()
+        basemap_sql = u"select basedata_nm from extjob.extjob_main where extjob_id = '{}'".format(self.extjob_id)
+
+        cur.execute(basemap_sql)
+        basemapDir = cur.fetchone()
+
+        fileInfo = QFileInfo(basemapDir[0])
+        baseName = fileInfo.baseName()
+        rlayer = QgsRasterLayer(basemapDir[0], baseName)
+        QgsMapLayerRegistry.instance().addMapLayer(rlayer)
 
         self.makeColumnSql(False)
 
